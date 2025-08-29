@@ -1,4 +1,5 @@
 {
+  "version": 2,
   "builds": [
     {
       "src": "api/webhook.py",
@@ -7,8 +8,15 @@
   ],
   "routes": [
     {
-      "src": "/api/webhook",
+      "src": "/api/webhook(.*)",
+      "dest": "api/webhook.py"
+    },
+    {
+      "src": "/(.*)",
       "dest": "api/webhook.py"
     }
-  ]
+  ],
+  "env": {
+    "PYTHONPATH": "."
+  }
 }
