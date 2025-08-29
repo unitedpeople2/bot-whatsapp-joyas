@@ -10,12 +10,13 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Configuración
-WHATSAPP_TOKEN = os.environ.get('WHATSAPP_TOKEN')
-VERIFY_TOKEN = os.environ.get('VERIFY_TOKEN', 'mi_token_verificacion')
-WHATSAPP_API_URL = "https://graph.facebook.com/v21.0/558167634052467/messages"
+# Configuración - Corregidas las variables de entorno
+WHATSAPP_TOKEN = os.environ.get('WHATSAPP_ACCESS_TOKEN')
+VERIFY_TOKEN = os.environ.get('WHATSAPP_VERIFY_TOKEN', 'JoyasBot2025!')
+PHONE_NUMBER_ID = os.environ.get('WHATSAPP_PHONE_NUMBER_ID')
+WHATSAPP_API_URL = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages"
 
-@app.route('/webhook', methods=['GET', 'POST'])
+@app.route('/api/webhook', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
         # Verificación del webhook
@@ -23,11 +24,13 @@ def webhook():
         token = request.args.get('hub.verify_token')
         challenge = request.args.get('hub.challenge')
         
+        logger.info(f"Verificación recibida - Mode: {mode}, Token: {token}")
+        
         if mode == 'subscribe' and token == VERIFY_TOKEN:
             logger.info("Webhook verificado exitosamente")
             return challenge
         else:
-            logger.warning("Verificación fallida")
+            logger.warning(f"Verificación fallida - Token esperado: {VERIFY_TOKEN}, Token recibido: {token}")
             return 'Forbidden', 403
     
     elif request.method == 'POST':
@@ -114,7 +117,7 @@ def generate_response(text, name):
         return f"¡El oro es eterno {name}! 🏆 Trabajamos con:\n\n• Oro 14k y 18k 💛\n• Oro blanco elegante 🤍\n• Oro rosa romántico 🌹\n• Diseños exclusivos ✨\n\n¿Te interesa ver nuestra colección?"
     
     elif any(palabra in text for palabra in ['plata', 'plateado']):
-        return f"¡La plata es versátil {name}! 🌟 Ofrecemos:\n\n• Plata 925 de calidad 💫\n• Diseños modernos 🎯\n• Acabados especiales ✨\n• Precios accesibles 💝\n\n¿Qué tipo de joya buscas?"
+        return f"¡La plata es versátil {name}! 🌟 Ofrecemos:\n\n• Plata 925 de calidad 💫\n• Diseños modernos 🎯\n• Acabados especiales ✨\n• Precios accesibles 👍\n\n¿Qué tipo de joya buscas?"
     
     elif any(palabra in text for palabra in ['diamante', 'brillante']):
         return f"¡Los diamantes son únicos {name}! 💎 Contamos con:\n\n• Diamantes certificados 📜\n• Diferentes tallas ✨\n• Montajes exclusivos 👑\n• Garantía de calidad 🛡️\n\n¿Es para una ocasión especial?"
@@ -124,27 +127,27 @@ def generate_response(text, name):
         return f"¡Tenemos opciones para todos {name}! 💰\n\n• Financiamiento disponible 💳\n• Promociones especiales 🎉\n• Descuentos por volumen 📦\n• Planes de pago flexibles ⏰\n\n¿Te gustaría ver alguna colección específica?"
     
     elif any(palabra in text for palabra in ['envío', 'entrega', 'delivery']):
-        return f"¡Enviamos a todo el país {name}! 🚚✨\n\n• Envío gratis en compras +$200 🎁\n• Entrega 2-5 días hábiles ⚡\n• Empaque especial y seguro 📦\n• Seguimiento en tiempo real 📍\n\n¿Desde qué ciudad nos escribes?"
+        return f"¡Enviamos a todo el país {name}! 🚚✨\n\n• Envío gratis en compras +$200 🎁\n• Entrega 2-5 días hábiles ⚡\n• Empaque especial y seguro 📦\n• Seguimiento en tiempo real 📱\n\n¿Desde qué ciudad nos escribes?"
     
     elif any(palabra in text for palabra in ['garantía', 'certificado', 'calidad']):
         return f"¡La calidad es nuestra prioridad {name}! 🏆\n\n• Garantía de 1 año 🛡️\n• Certificados de autenticidad 📜\n• Materiales premium ⭐\n• Servicio post-venta 🤝\n\n¿Qué joya te interesa?"
     
     # Ocasiones especiales
     elif any(palabra in text for palabra in ['matrimonio', 'boda', 'casamiento']):
-        return f"¡Qué emoción {name}! 💒✨ Para tu boda tenemos:\n\n• Anillos de compromiso 💍\n• Alianzas matrimoniales 👫\n• Aretes para novia 👂\n• Sets completos 💎\n\n¡Hagamos tu día perfecto!"
+        return f"¡Qué emoción {name}! 👰✨ Para tu boda tenemos:\n\n• Anillos de compromiso 💍\n• Alianzas matrimoniales 👫\n• Aretes para novia 👂\n• Sets completos 💎\n\n¡Hagamos tu día perfecto!"
     
     elif any(palabra in text for palabra in ['regalo', 'obsequio', 'presente']):
         return f"¡Qué lindo detalle {name}! 🎁✨ Tenemos regalos perfectos:\n\n• Joyas para mamá 👩‍❤️‍👨\n• Regalos románticos 💕\n• Joyas para amigas 👯‍♀️\n• Empaque regalo gratis 🎀\n\n¿Para quién es el regalo?"
     
     elif any(palabra in text for palabra in ['cumpleaños', 'aniversario']):
-        return f"¡Celebremos juntos {name}! 🎂🎉 Para ocasiones especiales:\n\n• Joyas personalizadas 💎\n• Grabado incluido ✍️\n• Diseños únicos ⭐\n• Entrega express 🚀\n\n¿Qué fecha necesitas la entrega?"
+        return f"¡Celebremos juntos {name}! 🎂🎉 Para ocasiones especiales:\n\n• Joyas personalizadas 💎\n• Grabado incluido ✏️\n• Diseños únicos ⭐\n• Entrega express 🚀\n\n¿Qué fecha necesitas la entrega?"
     
     # Información de contacto
     elif any(palabra in text for palabra in ['dirección', 'ubicación', 'donde', 'tienda']):
         return f"¡Te esperamos {name}! 📍✨\n\n📍 Dirección: [Tu dirección aquí]\n⏰ Horario: Lun-Sáb 9AM-7PM\n📱 WhatsApp: Este mismo número\n🌐 Web: [tu-web.com]\n\n¿Te gustaría agendar una cita?"
     
     elif any(palabra in text for palabra in ['horario', 'hora', 'abierto', 'cerrado']):
-        return f"Nuestros horarios {name}! ⏰\n\n📅 Lunes a Sábado: 9:00 AM - 7:00 PM\n🔒 Domingos: Cerrado\n📱 WhatsApp: 24/7 disponible\n🛍️ Citas especiales: Previa coordinación\n\n¿Cuándo te gustaría visitarnos?"
+        return f"Nuestros horarios {name}! ⏰\n\n📅 Lunes a Sábado: 9:00 AM - 7:00 PM\n🔒 Domingos: Cerrado\n📱 WhatsApp: 24/7 disponible\n🛏️ Citas especiales: Previa coordinación\n\n¿Cuándo te gustaría visitarnos?"
     
     # Agradecimientos
     elif any(palabra in text for palabra in ['gracias', 'thank you', 'genial', 'perfecto']):
@@ -187,11 +190,12 @@ def send_whatsapp_message(to_number, message):
         logger.error(f"Error enviando mensaje: {e}")
         return False
 
-@app.route('/health', methods=['GET'])
+@app.route('/api/health', methods=['GET'])
 def health():
     """Endpoint de salud"""
     return jsonify({'status': 'healthy', 'timestamp': datetime.now().isoformat()})
 
+@app.route('/api', methods=['GET'])
 @app.route('/', methods=['GET'])
 def home():
     """Página de inicio"""
@@ -199,10 +203,14 @@ def home():
         'message': 'Bot de WhatsApp para Joyería',
         'status': 'active',
         'endpoints': {
-            'webhook': '/webhook',
-            'health': '/health'
+            'webhook': '/api/webhook',
+            'health': '/api/health'
         }
     })
+
+# Para Vercel
+def handler(request):
+    return app(request.environ, request.start_response)
 
 if __name__ == '__main__':
     app.run(debug=True)
