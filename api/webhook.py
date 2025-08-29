@@ -57,6 +57,7 @@ class handler(BaseHTTPRequestHandler):
                     respuesta_ia = self.generar_respuesta_con_ia(message_body)
                     self.enviar_mensaje(phone_number, respuesta_ia)
         except Exception as e:
+	# Registro de errores
             print(f"Error procesando el mensaje: {e}")
 
         self.send_response(200)
