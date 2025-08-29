@@ -13,8 +13,8 @@ app = Flask(__name__)
 # Configuración - Corregidas las variables de entorno
 WHATSAPP_TOKEN = os.environ.get('WHATSAPP_ACCESS_TOKEN')
 VERIFY_TOKEN = os.environ.get('WHATSAPP_VERIFY_TOKEN', 'JoyasBot2025!')
-PHONE_NUMBER_ID = os.environ.get('WHATSAPP_PHONE_NUMBER_ID')
-WHATSAPP_API_URL = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages"
+PHONE_NUMBER_ID = os.environ.get('WHATSAPP_PHONE_NUMBER_ID', '')
+WHATSAPP_API_URL = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages" if PHONE_NUMBER_ID else None
 
 @app.route('/api/webhook', methods=['GET', 'POST'])
 def webhook():
@@ -165,6 +165,10 @@ def send_whatsapp_message(to_number, message):
     """Enviar mensaje de WhatsApp"""
     if not WHATSAPP_TOKEN:
         logger.error("Token de WhatsApp no configurado")
+        return False
+    
+    if not WHATSAPP_API_URL:
+        logger.error("Phone Number ID no configurado")
         return False
     
     headers = {
