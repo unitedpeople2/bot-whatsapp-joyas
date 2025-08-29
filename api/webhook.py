@@ -1,50 +1,67 @@
+from http.server import BaseHTTPRequestHandler
 import os
 import json
 import requests
 
-def handler(event, context):
-    """Función handler para Vercel"""
-    
-    # Variables de entorno
-    ACCESS_TOKEN = os.environ.get("WHATSAPP_ACCESS_TOKEN")
-    PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_NUMBER_ID")
-    VERIFY_TOKEN = os.environ.get("WHATSAPP_WEBHOOK_SECRET")
-    
-    # Configurar Google AI
-    try:
-        import google.generativeai as genai
-        genai.configure(api_key=os.environ.get("GOOGLE_AI_API_KEY"))
-        google_ai_available = True
-    except:
-        google_ai_available = False
-    
-    # Obtener método HTTP
-    method = event.get('httpMethod', 'GET')
-    
-    # GET - Verificación del webhook
-    if method == 'GET':
-        query_params = event.get('queryStringParameters', {}) or {}
-        mode = query_params.get('hub.mode')
-        token = query_params.get('hub.verify_token')
-        challenge = query_params.get('hub.challenge')
-        
-        print(f"Verificación: mode={mode}, token={token}")
-        
-        if mode == 'subscribe' and token == VERIFY_TOKEN:
-            return {
-                'statusCode': 200,
-                'body': challenge
-            }
-        else:
-            return {
-                'statusCode': 403,
-                'body': 'Forbidden'
-            }
-    
-    # POST - Procesar mensaje
-    if method == 'POST':
+class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        """Maneja las peticiones GET para verificación del webhook"""
         try:
-            body = json.loads(event.get('body', '{}'))
+            from urllib.parse import urlparse, parse_qs
+            
+            # Variables de entorno
+            VERIFY_TOKEN = os.environ.get("WHATSAPP_VERIFY_TOKEN")
+            
+            # Parsear la URL
+            parsed_url = urlparse(self.path)
+            query_params = parse_qs(parsed_url.query)
+            
+            mode = query_params.get('hub.mode', [None])[0]
+            token = query_params.get('hub.verify_token', [None])[0]
+            challenge = query_params.get('hub.challenge', [None])[0]
+            
+            print(f"GET - Verificación: mode={mode}, token={token}")
+            
+            if mode == 'subscribe' and token == VERIFY_TOKEN:
+                self.send_response(200)
+                self.send_header('Content-type', 'text/plain')
+                self.end_headers()
+                self.wfile.write(challenge.encode())
+            else:
+                self.send_response(403)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({'error': 'Forbidden'}).encode())
+                
+        except Exception as e:
+            print(f"Error en GET: {e}")
+            self.send_response(500)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': str(e)}).encode())
+
+    def do_POST(self):
+        """Maneja las peticiones POST para procesar mensajes"""
+        try:
+            # Variables de entorno
+            ACCESS_TOKEN = os.environ.get("WHATSAPP_ACCESS_TOKEN")
+            PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_NUMBER_ID")
+            
+            # Configurar Google AI
+            google_ai_available = False
+            try:
+                import google.generativeai as genai
+                genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
+                google_ai_available = True
+            except Exception as e:
+                print(f"Google AI no disponible: {e}")
+            
+            # Leer el body
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            body = json.loads(post_data.decode('utf-8'))
+            
+            print(f"POST - Body recibido: {json.dumps(body, indent=2)}")
             
             # Extraer mensaje
             if (body.get('entry') and 
@@ -60,6 +77,8 @@ def handler(event, context):
                     from_number = message.get('from')
                     text = message.get('text', {}).get('body', '')
                     
+                    print(f"Mensaje de {from_number}: {text}")
+                    
                     if text and from_number:
                         # Generar respuesta
                         if google_ai_available:
@@ -70,22 +89,21 @@ def handler(event, context):
                         # Enviar mensaje
                         enviar_whatsapp(from_number, response_text, ACCESS_TOKEN, PHONE_NUMBER_ID)
             
-            return {
-                'statusCode': 200,
-                'body': json.dumps({'status': 'success'})
-            }
+            # Respuesta exitosa
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'status': 'success'}).encode())
             
         except Exception as e:
-            print(f"Error: {e}")
-            return {
-                'statusCode': 500,
-                'body': json.dumps({'error': str(e)})
-            }
-    
-    return {
-        'statusCode': 405,
-        'body': json.dumps({'error': 'Method not allowed'})
-    }
+            print(f"Error en POST: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            self.send_response(500)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': str(e)}).encode())
 
 def generar_respuesta_ai(texto):
     """Generar respuesta con Google AI"""
@@ -98,7 +116,8 @@ def generar_respuesta_ai(texto):
         
         response = model.generate_content(prompt)
         return response.text
-    except:
+    except Exception as e:
+        print(f"Error en Google AI: {e}")
         return generar_respuesta_simple(texto)
 
 def generar_respuesta_simple(texto):
@@ -136,14 +155,8 @@ def enviar_whatsapp(numero, mensaje, token, phone_id):
     
     try:
         response = requests.post(url, headers=headers, json=data)
-        print(f"Mensaje enviado: {response.status_code}")
+        print(f"Mensaje enviado: {response.status_code} - {response.text}")
+        return response.status_code == 200
     except Exception as e:
-        print(f"Error enviando: {e}")
-
-# Para compatibilidad con diferentes formatos de Vercel
-def main(request):
-    """Función alternativa"""
-    return handler(request, None)
-
-# Export default para Vercel
-default = handler
+        print(f"Error enviando mensaje: {e}")
+        return False
