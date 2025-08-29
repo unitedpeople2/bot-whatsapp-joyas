@@ -2,25 +2,22 @@ from flask import Flask, request, jsonify
 import os
 import requests
 import json
-from dotenv import load_dotenv
-
-# Cargar variables de entorno
-load_dotenv()
 
 # Configurar credenciales desde variables de entorno
 ACCESS_TOKEN = os.environ.get("WHATSAPP_ACCESS_TOKEN")
 PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_NUMBER_ID")
-VERIFY_TOKEN = os.environ.get("WHATSAPP_VERIFY_TOKEN")
+VERIFY_TOKEN = os.environ.get("WHATSAPP_WEBHOOK_SECRET")
 
-# Importar Google AI solo si está disponible
+# Importar Google AI
 try:
     import google.generativeai as genai
-    genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
+    google_key = os.environ.get("GOOGLE_AI_API_KEY")
+    genai.configure(api_key=google_key)
     GOOGLE_AI_AVAILABLE = True
     print("✅ Google AI configurado correctamente")
-except ImportError:
+except Exception as e:
     GOOGLE_AI_AVAILABLE = False
-    print("❌ Google AI no disponible, usando respuestas estáticas")
+    print(f"⚠ Error configurando Google AI: {e}")
 
 app = Flask(__name__)
 
@@ -90,13 +87,14 @@ def enviar_mensaje(destinatario, texto):
     except Exception as e:
         print(f"Error enviando mensaje: {e}")
 
-@app.route('/api/webhook', methods=['GET', 'POST'])
-def webhook():
-    if request.method == 'GET':
+# HANDLER PRINCIPAL PARA VERCEL
+def handler(req):
+    """Handler principal que maneja tanto GET como POST"""
+    if req.method == 'GET':
         # Verificación del webhook
-        mode = request.args.get('hub.mode')
-        token = request.args.get('hub.verify_token')
-        challenge = request.args.get('hub.challenge')
+        mode = req.args.get('hub.mode')
+        token = req.args.get('hub.verify_token')
+        challenge = req.args.get('hub.challenge')
         
         print(f"=== VERIFICACIÓN WEBHOOK ===")
         print(f"Mode: {mode}")
@@ -111,10 +109,10 @@ def webhook():
             print("❌ Verificación falló")
             return 'Forbidden', 403
     
-    elif request.method == 'POST':
+    elif req.method == 'POST':
         # Manejar mensajes entrantes de WhatsApp
         try:
-            body = request.get_json()
+            body = req.get_json()
             print("=== MENSAJE RECIBIDO ===")
             print(json.dumps(body, indent=2))
             
@@ -144,8 +142,6 @@ def webhook():
                         enviar_mensaje(phone_number, respuesta_ia)
                         
                         print(f"🤖 Respuesta enviada: {respuesta_ia[:50]}...")
-                    else:
-                        print(f"ℹ️ Tipo de mensaje no soportado: {message_info.get('type')}")
             
             return jsonify({'status': 'success'}), 200
         
@@ -153,34 +149,21 @@ def webhook():
             print(f"❌ Error procesando mensaje: {e}")
             return jsonify({'error': str(e)}), 500
 
+    return jsonify({'error': 'Method not allowed'}), 405
+
+# Routes para compatibilidad con Vercel
+@app.route('/api/webhook', methods=['GET', 'POST'])
+def webhook():
+    return handler(request)
+
 @app.route('/', methods=['GET'])
 def home():
     return """
     <h1>🤖 Daqui - WhatsApp Bot</h1>
     <p>Webhook funcionando correctamente!</p>
     <p>Estado: ✅ Activo</p>
-    <hr>
-    <p><strong>Endpoints disponibles:</strong></p>
-    <ul>
-        <li>GET /api/webhook - Verificación</li>
-        <li>POST /api/webhook - Recibir mensajes</li>
-        <li>GET /health - Estado del sistema</li>
-    </ul>
     """
 
-@app.route('/health', methods=['GET'])
-def health():
-    return jsonify({
-        'status': 'healthy',
-        'service': 'Daqui WhatsApp Bot',
-        'google_ai': 'available' if GOOGLE_AI_AVAILABLE else 'unavailable',
-        'environment_vars': {
-            'ACCESS_TOKEN': 'configured' if ACCESS_TOKEN else 'missing',
-            'PHONE_NUMBER_ID': 'configured' if PHONE_NUMBER_ID else 'missing',
-            'VERIFY_TOKEN': 'configured' if VERIFY_TOKEN else 'missing'
-        }
-    }), 200
-
-# Para Vercel
-if __name__ == '__main__':
-    app.run(debug=True)
+# Esta función es la que Vercel llama directamente
+def application(environ, start_response):
+    return app(environ, start_response)
