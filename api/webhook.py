@@ -17,9 +17,10 @@ try:
     import google.generativeai as genai
     genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
     GOOGLE_AI_AVAILABLE = True
+    print("✅ Google AI configurado correctamente")
 except ImportError:
     GOOGLE_AI_AVAILABLE = False
-    print("Google AI no disponible, usando respuestas estáticas")
+    print("❌ Google AI no disponible, usando respuestas estáticas")
 
 app = Flask(__name__)
 
@@ -181,4 +182,5 @@ def health():
     }), 200
 
 # Para Vercel
-app = app
+if __name__ == '__main__':
+    app.run(debug=True)
