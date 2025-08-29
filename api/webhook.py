@@ -1,162 +1,208 @@
-from http.server import BaseHTTPRequestHandler
-import os
-import json
+from flask import Flask, request, jsonify
 import requests
+import logging
+import os
+from datetime import datetime
 
-class handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        """Maneja las peticiones GET para verificación del webhook"""
-        try:
-            from urllib.parse import urlparse, parse_qs
-            
-            # Variables de entorno
-            VERIFY_TOKEN = os.environ.get("WHATSAPP_VERIFY_TOKEN")
-            
-            # Parsear la URL
-            parsed_url = urlparse(self.path)
-            query_params = parse_qs(parsed_url.query)
-            
-            mode = query_params.get('hub.mode', [None])[0]
-            token = query_params.get('hub.verify_token', [None])[0]
-            challenge = query_params.get('hub.challenge', [None])[0]
-            
-            print(f"GET - Verificación: mode={mode}, token={token}")
-            
-            if mode == 'subscribe' and token == VERIFY_TOKEN:
-                self.send_response(200)
-                self.send_header('Content-type', 'text/plain')
-                self.end_headers()
-                self.wfile.write(challenge.encode())
-            else:
-                self.send_response(403)
-                self.send_header('Content-type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({'error': 'Forbidden'}).encode())
-                
-        except Exception as e:
-            print(f"Error en GET: {e}")
-            self.send_response(500)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'error': str(e)}).encode())
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-    def do_POST(self):
-        """Maneja las peticiones POST para procesar mensajes"""
+app = Flask(__name__)
+
+# Configuración
+WHATSAPP_TOKEN = os.environ.get('WHATSAPP_TOKEN')
+VERIFY_TOKEN = os.environ.get('VERIFY_TOKEN', 'mi_token_verificacion')
+WHATSAPP_API_URL = "https://graph.facebook.com/v21.0/558167634052467/messages"
+
+@app.route('/webhook', methods=['GET', 'POST'])
+def webhook():
+    if request.method == 'GET':
+        # Verificación del webhook
+        mode = request.args.get('hub.mode')
+        token = request.args.get('hub.verify_token')
+        challenge = request.args.get('hub.challenge')
+        
+        if mode == 'subscribe' and token == VERIFY_TOKEN:
+            logger.info("Webhook verificado exitosamente")
+            return challenge
+        else:
+            logger.warning("Verificación fallida")
+            return 'Forbidden', 403
+    
+    elif request.method == 'POST':
+        # Procesar mensajes entrantes
         try:
-            # Variables de entorno
-            ACCESS_TOKEN = os.environ.get("WHATSAPP_ACCESS_TOKEN")
-            PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_NUMBER_ID")
+            data = request.get_json()
+            logger.info(f"Datos recibidos: {data}")
             
-            # Configurar Google AI
-            google_ai_available = False
-            try:
-                import google.generativeai as genai
-                genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
-                google_ai_available = True
-            except Exception as e:
-                print(f"Google AI no disponible: {e}")
+            # Verificar si hay mensajes
+            if 'entry' in data:
+                for entry in data['entry']:
+                    if 'changes' in entry:
+                        for change in entry['changes']:
+                            if change.get('field') == 'messages':
+                                value = change.get('value', {})
+                                if 'messages' in value:
+                                    for message in value['messages']:
+                                        process_message(message, value.get('contacts', []))
             
-            # Leer el body
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            body = json.loads(post_data.decode('utf-8'))
-            
-            print(f"POST - Body recibido: {json.dumps(body, indent=2)}")
-            
-            # Extraer mensaje
-            if (body.get('entry') and 
-                len(body['entry']) > 0 and
-                body['entry'][0].get('changes') and 
-                len(body['entry'][0]['changes']) > 0):
-                
-                changes = body['entry'][0]['changes'][0]
-                messages = changes.get('value', {}).get('messages', [])
-                
-                if messages:
-                    message = messages[0]
-                    from_number = message.get('from')
-                    text = message.get('text', {}).get('body', '')
-                    
-                    print(f"Mensaje de {from_number}: {text}")
-                    
-                    if text and from_number:
-                        # Generar respuesta
-                        if google_ai_available:
-                            response_text = generar_respuesta_ai(text)
-                        else:
-                            response_text = generar_respuesta_simple(text)
-                        
-                        # Enviar mensaje
-                        enviar_whatsapp(from_number, response_text, ACCESS_TOKEN, PHONE_NUMBER_ID)
-            
-            # Respuesta exitosa
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'status': 'success'}).encode())
+            return jsonify({'status': 'success'}), 200
             
         except Exception as e:
-            print(f"Error en POST: {e}")
-            import traceback
-            traceback.print_exc()
-            
-            self.send_response(500)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'error': str(e)}).encode())
+            logger.error(f"Error procesando webhook: {e}")
+            return jsonify({'error': str(e)}), 500
 
-def generar_respuesta_ai(texto):
-    """Generar respuesta con Google AI"""
+def process_message(message, contacts):
+    """Procesar mensaje individual"""
     try:
-        import google.generativeai as genai
-        model = genai.GenerativeModel('gemini-pro')
+        # Obtener información del mensaje
+        from_number = message.get('from')
+        message_type = message.get('type')
+        timestamp = message.get('timestamp')
         
-        prompt = f"""Eres 'Daqui', asistente de joyería fina en Perú. 
-        Responde de forma amable y profesional a: {texto}"""
+        # Obtener nombre del contacto
+        contact_name = "Usuario"
+        for contact in contacts:
+            if contact.get('wa_id') == from_number:
+                contact_name = contact.get('profile', {}).get('name', 'Usuario')
+                break
         
-        response = model.generate_content(prompt)
-        return response.text
+        logger.info(f"Procesando mensaje de {contact_name} ({from_number})")
+        
+        # Procesar según el tipo de mensaje
+        if message_type == 'text':
+            text_body = message.get('text', {}).get('body', '').lower()
+            logger.info(f"Mensaje de texto: {text_body}")
+            
+            # Generar respuesta basada en el mensaje
+            response_text = generate_response(text_body, contact_name)
+            
+            if response_text:
+                send_whatsapp_message(from_number, response_text)
+        
+        elif message_type in ['image', 'document', 'audio', 'video']:
+            logger.info(f"Mensaje multimedia recibido: {message_type}")
+            send_whatsapp_message(from_number, f"¡Hola {contact_name}! He recibido tu {message_type}. ¿En qué puedo ayudarte con nuestras joyas? 💎✨")
+        
     except Exception as e:
-        print(f"Error en Google AI: {e}")
-        return generar_respuesta_simple(texto)
+        logger.error(f"Error procesando mensaje: {e}")
 
-def generar_respuesta_simple(texto):
-    """Respuestas básicas"""
-    texto = texto.lower()
+def generate_response(text, name):
+    """Generar respuesta automática basada en el mensaje"""
+    text = text.lower()
     
-    if 'hola' in texto or 'hi' in texto:
-        return "¡Hola! Soy Daqui, tu asistente de joyería. ¿En qué puedo ayudarte?"
+    # Saludos
+    if any(saludo in text for saludo in ['hola', 'hi', 'hello', 'buenos días', 'buenas tardes', 'buenas noches']):
+        return f"¡Hola {name}! 👋✨ Bienvenid@ a nuestra joyería. Somos especialistas en joyas únicas y elegantes. ¿En qué puedo ayudarte hoy? 💎"
     
-    if 'anillo' in texto:
-        return "Tenemos hermosos anillos. ¿Buscas algo específico?"
+    # Consultas sobre productos
+    elif any(palabra in text for palabra in ['anillo', 'anillos', 'sortija']):
+        return f"¡Excelente elección {name}! 💍 Tenemos una hermosa colección de anillos:\n\n• Anillos de compromiso 💕\n• Alianzas de matrimonio 👫\n• Anillos de moda ✨\n• Anillos con piedras preciosas 💎\n\n¿Te interesa algún estilo en particular?"
     
-    if 'collar' in texto:
-        return "Nuestros collares son únicos. ¿Prefieres oro o plata?"
+    elif any(palabra in text for palabra in ['collar', 'collares', 'cadena']):
+        return f"¡Perfecto {name}! ✨ Nuestros collares son únicos:\n\n• Collares de oro 🏆\n• Collares de plata 🌟\n• Collares con dijes 💫\n• Gargantillas elegantes 💎\n\n¿Qué estilo buscas?"
     
-    if 'precio' in texto:
-        return "Los precios van desde S/.150. ¿Qué tipo de joya te interesa?"
+    elif any(palabra in text for palabra in ['arete', 'aretes', 'pendiente', 'zarcillo']):
+        return f"¡Genial {name}! 👂✨ Tenemos aretes espectaculares:\n\n• Aretes de perlas 🤍\n• Aretes de oro/plata 🌟\n• Aretes largos elegantes 💫\n• Aretes minimalistas 🎯\n\n¿Cuál es tu estilo favorito?"
     
-    return "Gracias por contactarnos. Soy Daqui, ¿en qué puedo ayudarte con nuestras joyas?"
+    elif any(palabra in text for palabra in ['pulsera', 'pulseras', 'brazalete']):
+        return f"¡Hermosa elección {name}! 💪✨ Nuestras pulseras:\n\n• Pulseras de tennis 💎\n• Pulseras de eslabones 🔗\n• Pulseras con charms 🍀\n• Brazaletes statement 👑\n\n¿Qué tipo prefieres?"
+    
+    # Consultas sobre materiales
+    elif any(palabra in text for palabra in ['oro', 'dorado']):
+        return f"¡El oro es eterno {name}! 🏆 Trabajamos con:\n\n• Oro 14k y 18k 💛\n• Oro blanco elegante 🤍\n• Oro rosa romántico 🌹\n• Diseños exclusivos ✨\n\n¿Te interesa ver nuestra colección?"
+    
+    elif any(palabra in text for palabra in ['plata', 'plateado']):
+        return f"¡La plata es versátil {name}! 🌟 Ofrecemos:\n\n• Plata 925 de calidad 💫\n• Diseños modernos 🎯\n• Acabados especiales ✨\n• Precios accesibles 💝\n\n¿Qué tipo de joya buscas?"
+    
+    elif any(palabra in text for palabra in ['diamante', 'brillante']):
+        return f"¡Los diamantes son únicos {name}! 💎 Contamos con:\n\n• Diamantes certificados 📜\n• Diferentes tallas ✨\n• Montajes exclusivos 👑\n• Garantía de calidad 🛡️\n\n¿Es para una ocasión especial?"
+    
+    # Consultas comerciales
+    elif any(palabra in text for palabra in ['precio', 'costo', 'cuanto', 'valor']):
+        return f"¡Tenemos opciones para todos {name}! 💰\n\n• Financiamiento disponible 💳\n• Promociones especiales 🎉\n• Descuentos por volumen 📦\n• Planes de pago flexibles ⏰\n\n¿Te gustaría ver alguna colección específica?"
+    
+    elif any(palabra in text for palabra in ['envío', 'entrega', 'delivery']):
+        return f"¡Enviamos a todo el país {name}! 🚚✨\n\n• Envío gratis en compras +$200 🎁\n• Entrega 2-5 días hábiles ⚡\n• Empaque especial y seguro 📦\n• Seguimiento en tiempo real 📍\n\n¿Desde qué ciudad nos escribes?"
+    
+    elif any(palabra in text for palabra in ['garantía', 'certificado', 'calidad']):
+        return f"¡La calidad es nuestra prioridad {name}! 🏆\n\n• Garantía de 1 año 🛡️\n• Certificados de autenticidad 📜\n• Materiales premium ⭐\n• Servicio post-venta 🤝\n\n¿Qué joya te interesa?"
+    
+    # Ocasiones especiales
+    elif any(palabra in text for palabra in ['matrimonio', 'boda', 'casamiento']):
+        return f"¡Qué emoción {name}! 💒✨ Para tu boda tenemos:\n\n• Anillos de compromiso 💍\n• Alianzas matrimoniales 👫\n• Aretes para novia 👂\n• Sets completos 💎\n\n¡Hagamos tu día perfecto!"
+    
+    elif any(palabra in text for palabra in ['regalo', 'obsequio', 'presente']):
+        return f"¡Qué lindo detalle {name}! 🎁✨ Tenemos regalos perfectos:\n\n• Joyas para mamá 👩‍❤️‍👨\n• Regalos románticos 💕\n• Joyas para amigas 👯‍♀️\n• Empaque regalo gratis 🎀\n\n¿Para quién es el regalo?"
+    
+    elif any(palabra in text for palabra in ['cumpleaños', 'aniversario']):
+        return f"¡Celebremos juntos {name}! 🎂🎉 Para ocasiones especiales:\n\n• Joyas personalizadas 💎\n• Grabado incluido ✍️\n• Diseños únicos ⭐\n• Entrega express 🚀\n\n¿Qué fecha necesitas la entrega?"
+    
+    # Información de contacto
+    elif any(palabra in text for palabra in ['dirección', 'ubicación', 'donde', 'tienda']):
+        return f"¡Te esperamos {name}! 📍✨\n\n📍 Dirección: [Tu dirección aquí]\n⏰ Horario: Lun-Sáb 9AM-7PM\n📱 WhatsApp: Este mismo número\n🌐 Web: [tu-web.com]\n\n¿Te gustaría agendar una cita?"
+    
+    elif any(palabra in text for palabra in ['horario', 'hora', 'abierto', 'cerrado']):
+        return f"Nuestros horarios {name}! ⏰\n\n📅 Lunes a Sábado: 9:00 AM - 7:00 PM\n🔒 Domingos: Cerrado\n📱 WhatsApp: 24/7 disponible\n🛍️ Citas especiales: Previa coordinación\n\n¿Cuándo te gustaría visitarnos?"
+    
+    # Agradecimientos
+    elif any(palabra in text for palabra in ['gracias', 'thank you', 'genial', 'perfecto']):
+        return f"¡De nada {name}! 😊✨ Estamos aquí para ayudarte. ¿Hay algo más en lo que pueda asistirte? Recuerda que tenemos:\n\n💎 Joyas únicas y elegantes\n🎁 Empaque regalo gratuito\n🚚 Envíos a nivel nacional\n💳 Financiamiento disponible"
+    
+    # Despedidas
+    elif any(palabra in text for palabra in ['adiós', 'bye', 'hasta luego', 'nos vemos']):
+        return f"¡Hasta pronto {name}! 👋✨ Fue un placer atenderte. Recuerda que estamos aquí cuando necesites nuestras hermosas joyas. ¡Que tengas un día brillante como nuestros diamantes! 💎🌟"
+    
+    # Respuesta genérica
+    else:
+        return f"¡Hola {name}! 👋✨ Gracias por contactarnos. Somos especialistas en:\n\n💍 Anillos y alianzas\n✨ Collares elegantes\n👂 Aretes únicos\n💎 Pulseras premium\n\n¿En qué joya puedo ayudarte hoy?"
 
-def enviar_whatsapp(numero, mensaje, token, phone_id):
+def send_whatsapp_message(to_number, message):
     """Enviar mensaje de WhatsApp"""
-    url = f"https://graph.facebook.com/v17.0/{phone_id}/messages"
+    if not WHATSAPP_TOKEN:
+        logger.error("Token de WhatsApp no configurado")
+        return False
     
     headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
+        'Authorization': f'Bearer {WHATSAPP_TOKEN}',
+        'Content-Type': 'application/json'
     }
     
     data = {
         "messaging_product": "whatsapp",
-        "to": numero,
-        "text": {"body": mensaje}
+        "to": to_number,
+        "text": {"body": message}
     }
     
     try:
-        response = requests.post(url, headers=headers, json=data)
-        print(f"Mensaje enviado: {response.status_code} - {response.text}")
-        return response.status_code == 200
+        response = requests.post(WHATSAPP_API_URL, headers=headers, json=data)
+        if response.status_code == 200:
+            logger.info(f"Mensaje enviado exitosamente a {to_number}")
+            return True
+        else:
+            logger.error(f"Error enviando mensaje: {response.status_code} - {response.text}")
+            return False
     except Exception as e:
-        print(f"Error enviando mensaje: {e}")
+        logger.error(f"Error enviando mensaje: {e}")
         return False
+
+@app.route('/health', methods=['GET'])
+def health():
+    """Endpoint de salud"""
+    return jsonify({'status': 'healthy', 'timestamp': datetime.now().isoformat()})
+
+@app.route('/', methods=['GET'])
+def home():
+    """Página de inicio"""
+    return jsonify({
+        'message': 'Bot de WhatsApp para Joyería',
+        'status': 'active',
+        'endpoints': {
+            'webhook': '/webhook',
+            'health': '/health'
+        }
+    })
+
+if __name__ == '__main__':
+    app.run(debug=True)
