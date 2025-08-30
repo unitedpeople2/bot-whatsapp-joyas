@@ -10,61 +10,224 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Configuración - Corregidas las variables de entorno
+# Configuración de variables de entorno
 WHATSAPP_TOKEN = os.environ.get('WHATSAPP_ACCESS_TOKEN')
 VERIFY_TOKEN = os.environ.get('WHATSAPP_VERIFY_TOKEN', 'JoyasBot2025!')
 PHONE_NUMBER_ID = os.environ.get('WHATSAPP_PHONE_NUMBER_ID', '')
 WHATSAPP_API_URL = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages" if PHONE_NUMBER_ID else None
 
+# ==============================================================================
+# ====> ÁREA DE CONFIGURACIÓN DEL NEGOCIO (Aquí es donde modificas todo) <====
+# ==============================================================================
+
+INFO_NEGOCIO = {
+    "productos": {
+        "producto_1": {
+            "nombre_completo": "Collar Mágico Sol Radiant",
+            "precio": "S/ 69.00",
+            "material": "Acero inoxidable quirúrgico de alta calidad",
+            "propiedades": "Piedra termocrómica que cambia de color con la temperatura.",
+            "palabras_clave": [
+                "1",  # Para responder al menú
+                "sol radiant", 
+                "collar mágico", 
+                "collar que cambia color",
+                "precio y es ideal para regalo" # Para el mensaje de la publicidad
+            ]
+        }
+        # Para agregar más productos, solo copia y pega el bloque de "producto_1"
+        # y cámbialo a "producto_2", "producto_3", etc.
+    },
+    "politicas_envio": {
+        "delivery_lima": {
+            "modalidad": "Pago Contra Entrega a domicilio",
+            "costo": "Gratis",
+            "adelanto_requerido": "No requiere adelanto",
+            "tiempo_entrega": "1 a 2 días hábiles"
+        },
+        "envio_shalom": {
+            "modalidad": "Recojo en agencia Shalom",
+            "costo": "Gratis",
+            "adelanto_requerido": "S/ 20.00",
+            "tiempo_entrega_lima_sin_cobertura": "2 a 3 días hábiles",
+            "tiempo_entrega_provincias": "3 a 7 días hábiles",
+            "info_adicional": "Todos los envíos a provincias y zonas de Lima sin cobertura son únicamente por Shalom."
+        }
+    },
+    "datos_generales": {
+        "tienda_fisica": "No contamos con tienda física. Somos una tienda 100% online para ofrecerte los mejores precios.",
+        "garantia": "Ofrecemos una garantía de 15 días por cualquier defecto de fábrica.",
+        "material_joyas": "Todas nuestras joyas son de acero inoxidable quirúrgico de alta calidad, son hipoalergénicas y resistentes.",
+        "medida_cadena": "El largo estándar de nuestras cadenas es de 45 cm.",
+        "empaque": "¡Sí! Todas tus compras incluyen una hermosa cajita de regalo 🎁.",
+        "metodos_pago": {
+            "contra_entrega": "Para delivery en Lima puedes pagar con Efectivo, Yape o Plin al momento de recibir tu pedido.",
+            "adelanto_shalom": "El adelanto para envíos por Shalom puedes realizarlo por Yape, Plin o Transferencia bancaria."
+        }
+    }
+}
+
+COBERTURA_DELIVERY_LIMA = [
+    "ate", "barranco", "bellavista", "breña", "callao", "carabayllo", 
+    "carmen de la legua", "cercado de lima", "chorrillos", "comas", "el agustino", 
+    "independencia", "jesus maria", "la molina", "la perla", "la punta", 
+    "la victoria", "lince", "los olivos", "magdalena", "miraflores", 
+    "pueblo libre", "puente piedra", "rimac", "san borja", "san isidro", 
+    "san juan de lurigancho", "san juan de miraflores", "san luis", 
+    "san martin de porres", "san miguel", "santa anita", "surco", 
+    "surquillo", "villa el salvador", "villa maria del triunfo"
+]
+
+ABREVIATURAS_DISTRITOS = {
+    "sjl": "san juan de lurigancho",
+    "sjm": "san juan de miraflores",
+    "smp": "san martin de porres",
+    "vmt": "villa maria del triunfo",
+    "ves": "villa el salvador",
+    "lima centro": "cercado de lima"
+}
+# ==============================================================================
+# ====> FIN DEL ÁREA DE CONFIGURACIÓN <==== (Normalmente no necesitas tocar nada debajo de esta línea)
+# ==============================================================================
+
+
+def verificar_cobertura(texto_usuario):
+    """Verifica si el texto menciona un distrito con cobertura."""
+    texto = texto_usuario.lower().strip()
+    for distrito in COBERTURA_DELIVERY_LIMA:
+        if distrito in texto:
+            return distrito.title()
+    for abreviatura, nombre_completo in ABREVIATURAS_DISTRITOS.items():
+        if f" {abreviatura} " in f" {texto} " or texto == abreviatura:
+            return nombre_completo.title()
+    return None
+
+# ==============================================================================
+# ====> LÓGICA DE RESPUESTAS DEL BOT (El "cerebro" que decide qué responder) <====
+# ==============================================================================
+
+def generate_response(text, name):
+    """Genera respuestas automáticas utilizando la base de datos del negocio."""
+    text = text.lower()
+    
+    # --- Verificación de Cobertura ---
+    distrito_encontrado = verificar_cobertura(text)
+    if distrito_encontrado:
+        politica_delivery = INFO_NEGOCIO['politicas_envio']['delivery_lima']
+        return (f"¡Buenas noticias, {name}! Sí tenemos cobertura de delivery contra entrega en {distrito_encontrado}. 🎉\n\n"
+                f"Modalidad: {politica_delivery['modalidad']}\n"
+                f"Costo: {politica_delivery['costo']}\n"
+                f"Tiempo: {politica_delivery['tiempo_entrega']}\n\n"
+                f"¿Te gustaría coordinar tu pedido?")
+
+    # --- Consultas de Productos ---
+    producto_1 = INFO_NEGOCIO['productos']['producto_1']
+    if any(palabra in text for palabra in producto_1['palabras_clave']):
+        return (f"¡Te refieres a nuestro increíble {producto_1['nombre_completo']}! ☀️\n\n"
+                f"Es una joya única con una {producto_1['propiedades']}.\n"
+                f"Material: {producto_1['material']}.\n"
+                f"Precio: {producto_1['precio']}.\n\n"
+                f"¡Es perfecto para regalo! ¿Lo quieres para ti o para alguien especial?")
+
+    # --- Consultas de Políticas y Datos Generales ---
+    if any(palabra in text for palabra in ['envío', 'delivery', 'entrega', 'shalom', 'cobertura']):
+        delivery = INFO_NEGOCIO['politicas_envio']['delivery_lima']
+        shalom = INFO_NEGOCIO['politicas_envio']['envio_shalom']
+        return (f"¡Claro, {name}! Manejamos dos tipos de envío:\n\n"
+                f"1️⃣ *Delivery para Lima (con cobertura):*\n"
+                f"- Modalidad: {delivery['modalidad']}\n"
+                f"- Costo: {delivery['costo']}\n"
+                f"- Tiempo: {delivery['tiempo_entrega']}\n\n"
+                f"2️⃣ *Envío Nacional y Lima (sin cobertura):*\n"
+                f"- Empresa: Shalom (recojo en agencia)\n"
+                f"- Costo: {shalom['costo']}\n"
+                f"- Adelanto: {shalom['adelanto_requerido']}\n"
+                f"- Tiempo: {shalom['tiempo_entrega_provincias']}\n\n"
+                f"Dime tu distrito para confirmarte tu tipo de envío.")
+
+    if any(palabra in text for palabra in ['pago', 'pagar', 'yape', 'plin', 'métodos']):
+        pagos = INFO_NEGOCIO['datos_generales']['metodos_pago']
+        return (f"¡Claro! Estos son nuestros métodos de pago:\n\n"
+                f"💳 *Para Delivery en Lima:*\n{pagos['contra_entrega']}\n\n"
+                f"💸 *Para envíos por Shalom:*\n{pagos['adelanto_shalom']}")
+
+    if 'garantia' in text:
+        return INFO_NEGOCIO['datos_generales']['garantia']
+
+    if 'material' in text:
+        return INFO_NEGOCIO['datos_generales']['material_joyas']
+        
+    if any(palabra in text for palabra in ['medida', 'tamaño', 'largo', 'cadena']):
+        return INFO_NEGOCIO['datos_generales']['medida_cadena']
+
+    if any(palabra in text for palabra in ['empaque', 'caja', 'regalo']):
+        return INFO_NEGOCIO['datos_generales']['empaque']
+        
+    if any(palabra in text for palabra in ['tienda', 'física', 'local', 'ubicacion']):
+        return INFO_NEGOCIO['datos_generales']['tienda_fisica']
+
+    # --- Saludos y Respuestas Genéricas (CON SOLUCIÓN PARA ERRORES DE TIPEO) ---
+    saludos_comunes = ['hola', 'hila', 'ola', 'buenos', 'buenas', 'bnas', 'qué tal', 'q tal', 'info']
+    if any(saludo in text for saludo in saludos_comunes):
+        productos_disponibles = []
+        if 'producto_1' in INFO_NEGOCIO['productos']:
+            productos_disponibles.append("1️⃣ Collar Sol Radiant (Brilla con tu energía)")
+        
+        texto_productos = "\n".join(productos_disponibles)
+        
+        return (f"¡Hola {name}! 👋✨ Soy tu asesora virtual de Daaqui Joyas. ¡Bienvenid@!\n\n"
+                f"Actualmente tenemos en stock estas joyas mágicas con envío gratis:\n\n"
+                f"{texto_productos}\n\n"
+                f"Escribe el número o el nombre del collar que te gustaría conocer. También puedes preguntar por 'envío' o 'pagos'.")
+        
+    if any(palabra in text for palabra in ['gracias', 'grs', 'perfecto', 'genial', 'ok']):
+        return f"¡De nada, {name}! 😊✨ Si tienes alguna otra consulta, no dudes en preguntar."
+    
+    if any(palabra in text for palabra in ['adiós', 'bye', 'hasta luego', 'chao']):
+        return f"¡Hasta pronto, {name}! 👋✨ Fue un placer atenderte. Te esperamos en Daaqui Joyas."
+
+
+    # --- Respuesta por Defecto ---
+    else:
+        return f"¡Hola {name}! 👋 Gracias por tu mensaje. No entendí muy bien tu consulta. ¿Podrías reformularla? Puedes preguntar sobre:\n\n- El 'collar sol radiant'\n- Métodos de envío\n- Cobertura de delivery\n- Métodos de pago"
+
+# ==============================================================================
+# ====> LÓGICA INTERNA DEL BOT (Normalmente no necesitas tocar esto) <====
+# ==============================================================================
+
 @app.route('/api/webhook', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
-        # Verificación del webhook
         mode = request.args.get('hub.mode')
         token = request.args.get('hub.verify_token')
         challenge = request.args.get('hub.challenge')
-        
-        logger.info(f"Verificación recibida - Mode: {mode}, Token: {token}")
-        
         if mode == 'subscribe' and token == VERIFY_TOKEN:
             logger.info("Webhook verificado exitosamente")
             return challenge
         else:
             logger.warning(f"Verificación fallida - Token esperado: {VERIFY_TOKEN}, Token recibido: {token}")
             return 'Forbidden', 403
-    
     elif request.method == 'POST':
-        # Procesar mensajes entrantes
         try:
             data = request.get_json()
             logger.info(f"Datos recibidos: {data}")
-            
-            # Verificar si hay mensajes
-            if 'entry' in data:
-                for entry in data['entry']:
-                    if 'changes' in entry:
-                        for change in entry['changes']:
-                            if change.get('field') == 'messages':
-                                value = change.get('value', {})
-                                if 'messages' in value:
-                                    for message in value['messages']:
-                                        process_message(message, value.get('contacts', []))
-            
+            if data.get('object') == 'whatsapp_business_account':
+                for entry in data.get('entry', []):
+                    for change in entry.get('changes', []):
+                        if change.get('field') == 'messages':
+                            value = change.get('value', {})
+                            for message in value.get('messages', []):
+                                process_message(message, value.get('contacts', []))
             return jsonify({'status': 'success'}), 200
-            
         except Exception as e:
             logger.error(f"Error procesando webhook: {e}")
             return jsonify({'error': str(e)}), 500
 
 def process_message(message, contacts):
-    """Procesar mensaje individual"""
+    """Procesa un mensaje entrante y envía una respuesta."""
     try:
-        # Obtener información del mensaje
         from_number = message.get('from')
         message_type = message.get('type')
-        timestamp = message.get('timestamp')
-        
-        # Obtener nombre del contacto
         contact_name = "Usuario"
         for contact in contacts:
             if contact.get('wa_id') == from_number:
@@ -73,114 +236,36 @@ def process_message(message, contacts):
         
         logger.info(f"Procesando mensaje de {contact_name} ({from_number})")
         
-        # Procesar según el tipo de mensaje
         if message_type == 'text':
             text_body = message.get('text', {}).get('body', '').lower()
             logger.info(f"Mensaje de texto: {text_body}")
             
-            # Generar respuesta basada en el mensaje
             response_text = generate_response(text_body, contact_name)
             
             if response_text:
-                send_whatsapp_message(from_number, response_text)
+                ### CAMBIO 1: Ahora convertimos el texto a un payload ###
+                text_payload = {"type": "text", "text": {"body": response_text}}
+                send_whatsapp_message(from_number, text_payload)
         
         elif message_type in ['image', 'document', 'audio', 'video']:
             logger.info(f"Mensaje multimedia recibido: {message_type}")
-            send_whatsapp_message(from_number, f"¡Hola {contact_name}! He recibido tu {message_type}. ¿En qué puedo ayudarte con nuestras joyas? 💎✨")
+            multimedia_response_payload = {"type": "text", "text": {"body": f"¡Hola {contact_name}! He recibido tu {message_type}. ¿En qué puedo ayudarte con nuestras joyas? 💎✨"}}
+            send_whatsapp_message(from_number, multimedia_response_payload)
         
     except Exception as e:
         logger.error(f"Error procesando mensaje: {e}")
 
-def generate_response(text, name):
-    """Generar respuesta automática basada en el mensaje"""
-    text = text.lower()
-    
-    # Saludos
-    if any(saludo in text for saludo in ['hola', 'hi', 'hello', 'buenos días', 'buenas tardes', 'buenas noches']):
-        return f"¡Hola {name}! 👋✨ Bienvenid@ a nuestra joyería. Somos especialistas en joyas únicas y elegantes. ¿En qué puedo ayudarte hoy? 💎"
-    
-    # Consultas sobre productos
-    elif any(palabra in text for palabra in ['anillo', 'anillos', 'sortija']):
-        return f"¡Excelente elección {name}! 💍 Tenemos una hermosa colección de anillos:\n\n• Anillos de compromiso 💕\n• Alianzas de matrimonio 👫\n• Anillos de moda ✨\n• Anillos con piedras preciosas 💎\n\n¿Te interesa algún estilo en particular?"
-    
-    elif any(palabra in text for palabra in ['collar', 'collares', 'cadena']):
-        return f"¡Perfecto {name}! ✨ Nuestros collares son únicos:\n\n• Collares de oro 🏆\n• Collares de plata 🌟\n• Collares con dijes 💫\n• Gargantillas elegantes 💎\n\n¿Qué estilo buscas?"
-    
-    elif any(palabra in text for palabra in ['arete', 'aretes', 'pendiente', 'zarcillo']):
-        return f"¡Genial {name}! 👂✨ Tenemos aretes espectaculares:\n\n• Aretes de perlas 🤍\n• Aretes de oro/plata 🌟\n• Aretes largos elegantes 💫\n• Aretes minimalistas 🎯\n\n¿Cuál es tu estilo favorito?"
-    
-    elif any(palabra in text for palabra in ['pulsera', 'pulseras', 'brazalete']):
-        return f"¡Hermosa elección {name}! 💪✨ Nuestras pulseras:\n\n• Pulseras de tennis 💎\n• Pulseras de eslabones 🔗\n• Pulseras con charms 🍀\n• Brazaletes statement 👑\n\n¿Qué tipo prefieres?"
-    
-    # Consultas sobre materiales
-    elif any(palabra in text for palabra in ['oro', 'dorado']):
-        return f"¡El oro es eterno {name}! 🏆 Trabajamos con:\n\n• Oro 14k y 18k 💛\n• Oro blanco elegante 🤍\n• Oro rosa romántico 🌹\n• Diseños exclusivos ✨\n\n¿Te interesa ver nuestra colección?"
-    
-    elif any(palabra in text for palabra in ['plata', 'plateado']):
-        return f"¡La plata es versátil {name}! 🌟 Ofrecemos:\n\n• Plata 925 de calidad 💫\n• Diseños modernos 🎯\n• Acabados especiales ✨\n• Precios accesibles 👍\n\n¿Qué tipo de joya buscas?"
-    
-    elif any(palabra in text for palabra in ['diamante', 'brillante']):
-        return f"¡Los diamantes son únicos {name}! 💎 Contamos con:\n\n• Diamantes certificados 📜\n• Diferentes tallas ✨\n• Montajes exclusivos 👑\n• Garantía de calidad 🛡️\n\n¿Es para una ocasión especial?"
-    
-    # Consultas comerciales
-    elif any(palabra in text for palabra in ['precio', 'costo', 'cuanto', 'valor']):
-        return f"¡Tenemos opciones para todos {name}! 💰\n\n• Financiamiento disponible 💳\n• Promociones especiales 🎉\n• Descuentos por volumen 📦\n• Planes de pago flexibles ⏰\n\n¿Te gustaría ver alguna colección específica?"
-    
-    elif any(palabra in text for palabra in ['envío', 'entrega', 'delivery']):
-        return f"¡Enviamos a todo el país {name}! 🚚✨\n\n• Envío gratis en compras +$200 🎁\n• Entrega 2-5 días hábiles ⚡\n• Empaque especial y seguro 📦\n• Seguimiento en tiempo real 📱\n\n¿Desde qué ciudad nos escribes?"
-    
-    elif any(palabra in text for palabra in ['garantía', 'certificado', 'calidad']):
-        return f"¡La calidad es nuestra prioridad {name}! 🏆\n\n• Garantía de 1 año 🛡️\n• Certificados de autenticidad 📜\n• Materiales premium ⭐\n• Servicio post-venta 🤝\n\n¿Qué joya te interesa?"
-    
-    # Ocasiones especiales
-    elif any(palabra in text for palabra in ['matrimonio', 'boda', 'casamiento']):
-        return f"¡Qué emoción {name}! 👰✨ Para tu boda tenemos:\n\n• Anillos de compromiso 💍\n• Alianzas matrimoniales 👫\n• Aretes para novia 👂\n• Sets completos 💎\n\n¡Hagamos tu día perfecto!"
-    
-    elif any(palabra in text for palabra in ['regalo', 'obsequio', 'presente']):
-        return f"¡Qué lindo detalle {name}! 🎁✨ Tenemos regalos perfectos:\n\n• Joyas para mamá 👩‍❤️‍👨\n• Regalos románticos 💕\n• Joyas para amigas 👯‍♀️\n• Empaque regalo gratis 🎀\n\n¿Para quién es el regalo?"
-    
-    elif any(palabra in text for palabra in ['cumpleaños', 'aniversario']):
-        return f"¡Celebremos juntos {name}! 🎂🎉 Para ocasiones especiales:\n\n• Joyas personalizadas 💎\n• Grabado incluido ✏️\n• Diseños únicos ⭐\n• Entrega express 🚀\n\n¿Qué fecha necesitas la entrega?"
-    
-    # Información de contacto
-    elif any(palabra in text for palabra in ['dirección', 'ubicación', 'donde', 'tienda']):
-        return f"¡Te esperamos {name}! 📍✨\n\n📍 Dirección: [Tu dirección aquí]\n⏰ Horario: Lun-Sáb 9AM-7PM\n📱 WhatsApp: Este mismo número\n🌐 Web: [tu-web.com]\n\n¿Te gustaría agendar una cita?"
-    
-    elif any(palabra in text for palabra in ['horario', 'hora', 'abierto', 'cerrado']):
-        return f"Nuestros horarios {name}! ⏰\n\n📅 Lunes a Sábado: 9:00 AM - 7:00 PM\n🔒 Domingos: Cerrado\n📱 WhatsApp: 24/7 disponible\n🛏️ Citas especiales: Previa coordinación\n\n¿Cuándo te gustaría visitarnos?"
-    
-    # Agradecimientos
-    elif any(palabra in text for palabra in ['gracias', 'thank you', 'genial', 'perfecto']):
-        return f"¡De nada {name}! 😊✨ Estamos aquí para ayudarte. ¿Hay algo más en lo que pueda asistirte? Recuerda que tenemos:\n\n💎 Joyas únicas y elegantes\n🎁 Empaque regalo gratuito\n🚚 Envíos a nivel nacional\n💳 Financiamiento disponible"
-    
-    # Despedidas
-    elif any(palabra in text for palabra in ['adiós', 'bye', 'hasta luego', 'nos vemos']):
-        return f"¡Hasta pronto {name}! 👋✨ Fue un placer atenderte. Recuerda que estamos aquí cuando necesites nuestras hermosas joyas. ¡Que tengas un día brillante como nuestros diamantes! 💎🌟"
-    
-    # Respuesta genérica
-    else:
-        return f"¡Hola {name}! 👋✨ Gracias por contactarnos. Somos especialistas en:\n\n💍 Anillos y alianzas\n✨ Collares elegantes\n👂 Aretes únicos\n💎 Pulseras premium\n\n¿En qué joya puedo ayudarte hoy?"
-
-def send_whatsapp_message(to_number, message):
-    """Enviar mensaje de WhatsApp"""
-    if not WHATSAPP_TOKEN:
-        logger.error("Token de WhatsApp no configurado")
+def send_whatsapp_message(to_number, message_data):
+    """Envía un mensaje de WhatsApp usando un payload de datos."""
+    if not WHATSAPP_TOKEN or not WHATSAPP_API_URL:
+        logger.error("Token de WhatsApp o URL de API no configurados.")
         return False
     
-    if not WHATSAPP_API_URL:
-        logger.error("Phone Number ID no configurado")
-        return False
+    headers = {'Authorization': f'Bearer {WHATSAPP_TOKEN}', 'Content-Type': 'application/json'}
     
-    headers = {
-        'Authorization': f'Bearer {WHATSAPP_TOKEN}',
-        'Content-Type': 'application/json'
-    }
-    
-    data = {
-        "messaging_product": "whatsapp",
-        "to": to_number,
-        "text": {"body": message}
-    }
+    ### CAMBIO 2: La función ahora es más flexible ###
+    data = {"messaging_product": "whatsapp", "to": to_number}
+    data.update(message_data)
     
     try:
         response = requests.post(WHATSAPP_API_URL, headers=headers, json=data)
@@ -191,26 +276,18 @@ def send_whatsapp_message(to_number, message):
             logger.error(f"Error enviando mensaje: {response.status_code} - {response.text}")
             return False
     except Exception as e:
-        logger.error(f"Error enviando mensaje: {e}")
+        logger.error(f"Excepción enviando mensaje: {e}")
         return False
 
+# Endpoints adicionales (normalmente no se tocan)
 @app.route('/api/health', methods=['GET'])
 def health():
-    """Endpoint de salud"""
     return jsonify({'status': 'healthy', 'timestamp': datetime.now().isoformat()})
 
 @app.route('/api', methods=['GET'])
 @app.route('/', methods=['GET'])
 def home():
-    """Página de inicio"""
-    return jsonify({
-        'message': 'Bot de WhatsApp para Joyería',
-        'status': 'active',
-        'endpoints': {
-            'webhook': '/api/webhook',
-            'health': '/api/health'
-        }
-    })
+    return jsonify({'message': 'Bot de WhatsApp para Joyería Daaqui', 'status': 'active'})
 
 if __name__ == '__main__':
     app.run(debug=True)
