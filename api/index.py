@@ -133,7 +133,7 @@ def generate_response(text, name, from_number):
 
 
 # ==============================================================================
-# handle_sales_flow CON LÓGICA DE CORRECCIÓN MEJORADA
+# handle_sales_flow CON GUARDADO CORREGIDO Y FLJJO MEJORADO
 # ==============================================================================
 def handle_sales_flow(user_id, user_name, user_message):
     session = user_sessions.get(user_id, {})
@@ -213,23 +213,29 @@ def handle_sales_flow(user_id, user_name, user_message):
 
     elif current_state == 'awaiting_final_confirmation':
         if 'si' in text or 'sí' in text or 'correcto' in text:
+            # CORREGIDO: Llamada a la función de guardado
             datos_del_pedido = {
                 'producto_seleccionado': session.get('producto_seleccionado'),
                 'precio_producto': session.get('precio_producto'),
-                'tipo_envio': session.get('tipo_envio'),
+                'tipo_envio': session.get('tipo_envio', 'Shalom'), # Añadido un default
                 'distrito': session.get('distrito'),
                 'detalles_cliente': session.get('detalles_cliente'),
                 'whatsapp_id': user_id
             }
-            guardar_pedido_en_sheet(datos_del_pedido)
+            guardado_exitoso = guardar_pedido_en_sheet(datos_del_pedido)
             
-            del user_sessions[user_id]
-            return "¡Excelente! Hemos registrado tu pedido con éxito. Un asesor se pondrá en contacto contigo en breve para finalizar los detalles. ¡Gracias por tu compra en Daaqui Joyas! 💖"
+            # Solo borramos la sesión si el guardado fue exitoso
+            if guardado_exitoso:
+                del user_sessions[user_id]
+                return "¡Excelente! Hemos registrado tu pedido con éxito. Un asesor se pondrá en contacto contigo en breve para finalizar los detalles. ¡Gracias por tu compra en Daaqui Joyas! 💖"
+            else:
+                # Si falla el guardado, informamos al usuario y al log
+                logger.error(f"Fallo crítico al guardar el pedido para {user_id}. La sesión no se borrará para reintentar.")
+                return "¡Uy! Tuvimos un problema al registrar tu pedido. Por favor, intenta confirmar nuevamente en un momento."
         
         elif 'no' in text:
             previous_state = 'awaiting_delivery_details' if session.get('tipo_envio') == 'Contra Entrega' else 'awaiting_shalom_details'
             session['state'] = previous_state
-            # MODIFICADO: Instrucción más clara para el cliente
             return "Entendido. Para corregirlo, por favor, envíame **toda la información de envío de nuevo** (nombre, dirección, etc.) con los datos correctos en un solo mensaje."
         
         else:
