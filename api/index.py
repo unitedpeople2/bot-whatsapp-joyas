@@ -59,7 +59,7 @@ ABREVIATURAS_DISTRITOS = { "sjl": "san juan de lurigancho", "sjm": "san juan de 
 
 
 # ==============================================================================
-# 3. FUNCIONES DE GOOGLE SHEETS (CON SELECCIÓN DE HOJA MEJORADA)
+# 3. FUNCIONES DE GOOGLE SHEETS
 # ==============================================================================
 def guardar_pedido_en_sheet(datos_pedido):
     try:
@@ -79,7 +79,6 @@ def guardar_pedido_en_sheet(datos_pedido):
         logger.info(f"[Sheets] Abriendo archivo: '{sheet_name}'...")
         spreadsheet = gc.open(sheet_name)
         
-        # MODIFICADO: Seleccionamos la primera hoja de trabajo disponible, sea cual sea su nombre.
         sh = spreadsheet.sheet1
         logger.info(f"[Sheets] Hoja de trabajo '{sh.title}' seleccionada correctamente.")
         
@@ -125,27 +124,23 @@ def buscar_producto(texto_usuario, return_key=False):
 
 def generate_response(text, name, from_number):
     text = text.lower()
-    if any(palabra in text for palabra in ['comprar', 'pedido', 'coordinar', 'quiero uno']):
-        user_sessions[from_number] = {'state': 'awaiting_product_selection'}
-        productos_disponibles = [f"{idx+1}️⃣ {prod['nombre_completo']}" for idx, prod in enumerate(INFO_NEGOCIO['productos'].values())]
-        texto_productos = "\n".join(productos_disponibles)
-        return (f"¡Excelente decisión, {name}! ✨\n\nEstos son los productos que tenemos disponibles:\n{texto_productos}\n\n"
-                "¿Cuál de ellos te gustaría llevar? Por favor, indícame el número o nombre.")
+    # MODIFICADO: Esta función ya no inicia el flujo de compra, solo da información.
+    
     distrito_encontrado = verificar_cobertura(text)
     if distrito_encontrado: return f"¡Buenas noticias, {name}! Sí tenemos cobertura de delivery contra entrega en {distrito_encontrado}. 🎉 Puedes iniciar tu pedido escribiendo 'comprar'."
+    
     producto_encontrado = buscar_producto(text)
     if producto_encontrado: return (f"¡Te refieres a nuestro increíble {producto_encontrado['nombre_completo']}! ☀️\n\n" f"Características: {producto_encontrado['propiedades']}.\n" f"Material: {producto_encontrado['material']}.\nPrecio: {producto_encontrado['precio']}.\n\n" f"Para ordenarlo, solo escribe 'comprar'.")
+    
     saludos_comunes = ['hola', 'hila', 'ola', 'buenos', 'buenas', 'bnas', 'qué tal', 'q tal', 'info']
     if any(saludo in text for saludo in saludos_comunes):
         productos_disponibles = [f"{idx+1}️⃣ {INFO_NEGOCIO['productos'][key]['nombre_completo']}" for idx, key in enumerate(INFO_NEGOCIO['productos'])]
         texto_productos = "\n".join(productos_disponibles)
         return (f"¡Hola {name}! 👋✨ Soy tu asesora virtual de Daaqui Joyas.\n\n" f"Tenemos en stock estas joyas mágicas con envío gratis:\n\n{texto_productos}\n\n" f"Escribe el número o el nombre del producto que te gustaría conocer.")
+    
     return f"¡Hola {name}! 👋 No entendí tu consulta. Puedes preguntar sobre nuestros productos, 'envío' o 'pagos'."
 
 
-# ==============================================================================
-# handle_sales_flow CON GUARDADO CORREGIDO Y FLJJO MEJORADO
-# ==============================================================================
 def handle_sales_flow(user_id, user_name, user_message):
     session = user_sessions.get(user_id, {})
     current_state = session.get('state')
@@ -276,15 +271,38 @@ def webhook():
             logger.error(f"Error procesando webhook: {e}")
             return jsonify({'error': str(e)}), 500
 
+# MODIFICADO: La lógica principal ahora es más robusta
 def process_message(message, contacts):
     try:
         from_number = message.get('from')
         if message.get('type') != 'text': return
+        
         contact_name = next((c.get('profile', {}).get('name', 'Usuario') for c in contacts if c.get('wa_id') == from_number), 'Usuario')
         text_body = message.get('text', {}).get('body', '')
         logger.info(f"Procesando de {contact_name} ({from_number}): '{text_body}'")
-        response_text = handle_sales_flow(from_number, contact_name, text_body) if from_number in user_sessions else generate_response(text_body, contact_name, from_number)
-        if response_text: send_whatsapp_message(from_number, {"type": "text", "text": {"body": response_text}})
+        
+        session_exists = from_number in user_sessions
+        text_lower = text_body.lower()
+
+        # Si no hay sesión, y el usuario quiere comprar, se crea una.
+        if not session_exists and any(palabra in text_lower for palabra in ['comprar', 'pedido', 'coordinar', 'quiero uno']):
+            user_sessions[from_number] = {'state': 'awaiting_product_selection'}
+            # Preparamos el primer mensaje del flujo de venta
+            productos_disponibles = [f"{idx+1}️⃣ {prod['nombre_completo']}" for idx, prod in enumerate(INFO_NEGOCIO['productos'].values())]
+            texto_productos = "\n".join(productos_disponibles)
+            response_text = (f"¡Excelente decisión, {contact_name}! ✨\n\n"
+                           f"Estos son los productos que tenemos disponibles:\n{texto_productos}\n\n"
+                           "¿Cuál de ellos te gustaría llevar? Por favor, indícame el número o nombre.")
+        # Si ya existe una sesión, siempre se usa el flujo de venta.
+        elif session_exists:
+            response_text = handle_sales_flow(from_number, contact_name, text_body)
+        # Si no hay sesión y no quiere comprar, es una consulta general.
+        else:
+            response_text = generate_response(text_body, contact_name, from_number)
+        
+        if response_text: 
+            send_whatsapp_message(from_number, {"type": "text", "text": {"body": response_text}})
+            
     except Exception as e:
         logger.error(f"Error en process_message: {e}")
 
