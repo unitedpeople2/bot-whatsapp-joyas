@@ -7,8 +7,8 @@ import logging
 import os
 from datetime import datetime
 import re
-import json      # <--- NUEVO: Para manejar las credenciales
-import gspread   # <--- NUEVO: La librería de Google Sheets
+import json
+import gspread
 
 # Configuración del logger
 logging.basicConfig(level=logging.INFO)
@@ -22,15 +22,13 @@ VERIFY_TOKEN = os.environ.get('WHATSAPP_VERIFY_TOKEN', 'JoyasBot2025!')
 PHONE_NUMBER_ID = os.environ.get('WHATSAPP_PHONE_NUMBER_ID', '')
 WHATSAPP_API_URL = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages" if PHONE_NUMBER_ID else None
 
-# Diccionario para guardar el estado de la conversación (la "memoria" del bot)
+# Diccionario para guardar el estado de la conversación
 user_sessions = {}
 
 
 # ==============================================================================
 # 2. ÁREA DE CONFIGURACIÓN DEL NEGOCIO
 # ==============================================================================
-# (Esta sección no cambia, contiene toda la información de tus productos,
-# políticas de envío, distritos, etc.)
 INFO_NEGOCIO = {
     "productos": {
         "producto_1": {
@@ -61,62 +59,44 @@ ABREVIATURAS_DISTRITOS = { "sjl": "san juan de lurigancho", "sjm": "san juan de 
 
 
 # ==============================================================================
-# NUEVO: 3. FUNCIONES DE GOOGLE SHEETS
+# 3. FUNCIONES DE GOOGLE SHEETS
 # ==============================================================================
 def guardar_pedido_en_sheet(datos_pedido):
-    """
-    Se conecta a Google Sheets usando las credenciales de entorno y guarda
-    los datos de un pedido en una nueva fila.
-    """
     try:
         logger.info("Intentando guardar pedido en Google Sheets...")
-        # Obtiene las credenciales y el nombre de la hoja desde las variables de entorno de Vercel
         creds_json_str = os.environ.get('GOOGLE_CREDENTIALS_JSON')
         sheet_name = os.environ.get('GOOGLE_SHEET_NAME')
 
         if not creds_json_str or not sheet_name:
-            logger.error("Error: Faltan las variables de entorno GOOGLE_CREDENTIALS_JSON o GOOGLE_SHEET_NAME.")
+            logger.error("Error: Faltan variables de entorno para Google Sheets.")
             return False
 
-        # Convierte el string JSON de las credenciales a un diccionario y se autentica
         creds_dict = json.loads(creds_json_str)
         gc = gspread.service_account_from_dict(creds_dict)
-        
-        # Abre la hoja de cálculo por su nombre y selecciona la primera hoja
         sh = gc.open(sheet_name).sheet1
         
-        # Prepara la fila con los datos del pedido. El orden debe coincidir con tus columnas.
-        # Basado en tu captura, el orden es: Fecha, Nombre, Direccion, Referencia, Destino, DNI, Forma de pago, Celular, Pedido, Total
         nueva_fila = [
-            datos_pedido.get('fecha', datetime.now().strftime("%d/%m/%Y %H:%M:%S")),
-            datos_pedido.get('nombre_cliente', ''), # Columna B: Nombre
-            '', # Columna C: Direccion (no la pedimos)
-            '', # Columna D: Referencia (no la pedimos)
-            datos_pedido.get('distrito', ''), # Columna E: Destino (distrito)
-            datos_pedido.get('dni_cliente', ''), # Columna F: DNI
-            datos_pedido.get('tipo_envio', ''), # Columna G: Forma de pago
-            datos_pedido.get('whatsapp_id', ''), # Columna H: Celular
-            datos_pedido.get('producto_seleccionado', ''), # Columna I: Pedido
-            datos_pedido.get('precio_producto', '') # Columna J: Total
+            datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+            datos_pedido.get('producto_seleccionado', ''),
+            datos_pedido.get('precio_producto', ''),
+            datos_pedido.get('tipo_envio', ''),
+            datos_pedido.get('distrito', ''),
+            datos_pedido.get('detalles_cliente', ''),
+            datos_pedido.get('whatsapp_id', '')
         ]
         
-        # Añade la fila al final de la hoja
         sh.append_row(nueva_fila)
         logger.info(f"¡Éxito! Pedido guardado en la hoja '{sheet_name}'.")
         return True
-    except gspread.exceptions.SpreadsheetNotFound:
-        logger.error(f"Error Crítico: No se encontró la hoja de cálculo llamada '{sheet_name}'. Revisa el nombre y que la hayas compartido con el email del bot.")
-        return False
     except Exception as e:
-        logger.error(f"Error inesperado al intentar guardar en Google Sheets: {e}")
+        logger.error(f"Error inesperado al guardar en Google Sheets: {e}")
         return False
 
 # ==============================================================================
-# 4. FUNCIONES DE LÓGICA DEL BOT (El "cerebro" del bot)
+# 4. FUNCIONES DE LÓGICA DEL BOT
 # ==============================================================================
 
 def verificar_cobertura(texto_usuario):
-    # (Función sin cambios)
     texto = texto_usuario.lower().strip().replace('.', '').replace(',', '')
     for distrito in COBERTURA_DELIVERY_LIMA:
         if distrito in texto: return distrito.title()
@@ -125,7 +105,6 @@ def verificar_cobertura(texto_usuario):
     return None
 
 def buscar_producto(texto_usuario, return_key=False):
-    # (Función sin cambios)
     texto = texto_usuario.lower()
     for key, producto_info in INFO_NEGOCIO["productos"].items():
         for palabra in producto_info["palabras_clave"]:
@@ -134,7 +113,6 @@ def buscar_producto(texto_usuario, return_key=False):
     return (None, None) if return_key else None
 
 def generate_response(text, name, from_number):
-    # (Función sin cambios)
     text = text.lower()
     if any(palabra in text for palabra in ['comprar', 'pedido', 'coordinar', 'quiero uno']):
         user_sessions[from_number] = {'state': 'awaiting_product_selection'}
@@ -153,69 +131,119 @@ def generate_response(text, name, from_number):
         return (f"¡Hola {name}! 👋✨ Soy tu asesora virtual de Daaqui Joyas.\n\n" f"Tenemos en stock estas joyas mágicas con envío gratis:\n\n{texto_productos}\n\n" f"Escribe el número o el nombre del producto que te gustaría conocer.")
     return f"¡Hola {name}! 👋 No entendí tu consulta. Puedes preguntar sobre nuestros productos, 'envío' o 'pagos'."
 
+
+# ==============================================================================
+# MODIFICADO: handle_sales_flow ahora incluye el paso de confirmación
+# ==============================================================================
 def handle_sales_flow(user_id, user_name, user_message):
     session = user_sessions.get(user_id, {})
     current_state = session.get('state')
+    text = user_message.lower()
 
     if current_state == 'awaiting_product_selection':
-        producto_key, producto_info = buscar_producto(user_message, return_key=True)
+        producto_key, producto_info = buscar_producto(text, return_key=True)
         if producto_info:
             session.update({
-                'state': 'awaiting_district', 
+                'state': 'awaiting_location', 
                 'producto_seleccionado': producto_info['nombre_completo'],
                 'precio_producto': producto_info['precio']
             })
-            return f"¡Confirmado: {producto_info['nombre_completo']}! Ahora, por favor, indícame tu distrito para coordinar el envío."
+            return f"¡Confirmado: {producto_info['nombre_completo']}! Para continuar, por favor, dime: ¿eres de Lima o de provincia?"
         return "No pude identificar el producto. Por favor, intenta con el número o nombre exacto."
 
-    elif current_state == 'awaiting_district':
-        distrito = verificar_cobertura(user_message)
-        if distrito:
-            session.update({'state': 'delivery_confirmation', 'distrito': distrito})
-            return (f"¡Perfecto, delivery para {distrito}! 🎉 El pago es contra entrega.\n\nPara confirmar, por favor, envíame en un solo mensaje:\n- Tu nombre completo\n- Tu DNI")
+    elif current_state == 'awaiting_location':
+        if 'lima' in text:
+            session['state'] = 'awaiting_lima_district'
+            return "¡Genial! Para saber qué tipo de envío te corresponde, por favor, indícame tu distrito."
+        elif 'provincia' in text:
+            session.update({'state': 'awaiting_shalom_agreement', 'distrito': 'Provincia'})
+            return (f"Entendido. Para provincia, los envíos son por la agencia Shalom y requieren un adelanto de {INFO_NEGOCIO['politicas_envio']['envio_shalom']['adelanto_requerido']}. "
+                    "El resto lo pagas al recoger tu pedido en la agencia. ¿Estás de acuerdo con estas condiciones? (Sí/No)")
         else:
-            session.update({'state': 'shalom_confirmation', 'distrito': user_message.title()})
-            return (f"Entendido. Para {user_message.title()} el envío es por Shalom. Se requiere un adelanto.\n\nSi estás de acuerdo, envíame en un solo mensaje:\n- Tu nombre completo\n- Tu DNI")
+            return "¿Eres de Lima o de provincia? Por favor, responde con una de esas dos opciones."
 
-    elif current_state in ['delivery_confirmation', 'shalom_confirmation']:
-        tipo_envio = "Contra Entrega" if current_state == 'delivery_confirmation' else "Adelanto Shalom"
-        
-        # MODIFICADO: Extraemos Nombre y DNI del mensaje del usuario
-        try:
-            nombre_cliente = user_message.split('\n')[0].strip()
-            dni_cliente = next((line.strip() for line in user_message.split('\n') if 'dni' in line.lower()), '').split()[-1]
-        except:
-            nombre_cliente = user_message # Si falla, guardamos todo el mensaje
-            dni_cliente = ''
+    elif current_state == 'awaiting_lima_district':
+        distrito_cobertura = verificar_cobertura(text)
+        if distrito_cobertura:
+            session.update({'state': 'awaiting_delivery_details', 'distrito': distrito_cobertura, 'tipo_envio': 'Contra Entrega'})
+            return f"¡Excelente! 🏙️ Tenemos cobertura en {distrito_cobertura}.\nPara completar tu pedido, necesito que me brindes en un solo mensaje: Nombre Completo, Dirección exacta y Referencia del domicilio. ✍🏼"
+        else:
+            session.update({'state': 'awaiting_shalom_agreement', 'distrito': user_message.title()})
+            return (f"Entendido. Para {user_message.title()}, los envíos son por la agencia Shalom y requieren un adelanto de {INFO_NEGOCIO['politicas_envio']['envio_shalom']['adelanto_requerido']}. "
+                    "El resto lo pagas al recoger tu pedido en la agencia. ¿Estás de acuerdo con estas condiciones? (Sí/No)")
 
-        # Prepara los datos del pedido
-        datos_del_pedido = {
-            'producto_seleccionado': session.get('producto_seleccionado'),
-            'precio_producto': session.get('precio_producto'),
-            'tipo_envio': tipo_envio,
-            'distrito': session.get('distrito'),
-            'nombre_cliente': nombre_cliente,
-            'dni_cliente': dni_cliente,
-            'whatsapp_id': user_id
-        }
-        
-        # Llama a la función para guardar en Google Sheets
-        guardar_pedido_en_sheet(datos_del_pedido)
-        
-        # Limpia la sesión del usuario
-        del user_sessions[user_id]
-        return "¡Excelente! Hemos registrado tu pedido. Un asesor se pondrá en contacto contigo en breve. ¡Gracias por tu compra en Daaqui Joyas! 💖"
-    
+    elif current_state == 'awaiting_shalom_agreement':
+        if 'si' in text or 'sí' in text or 'de acuerdo' in text:
+            session['state'] = 'awaiting_shalom_experience'
+            return "¿Alguna vez has recogido un pedido en una agencia Shalom? (Sí/No)"
+        else:
+            del user_sessions[user_id]
+            return "Entiendo. No te preocupes, si cambias de opinión, aquí estaremos para ayudarte. ¡Gracias por tu interés!"
+
+    elif current_state == 'awaiting_shalom_experience':
+        if 'si' in text or 'sí' in text:
+            session['state'] = 'awaiting_shalom_details'
+            return "¡Perfecto! Para procesar tu pedido, por favor, bríndame en un solo mensaje tu Nombre Completo, DNI y la dirección de la agencia Shalom donde sueles recoger.✍🏼"
+        else:
+            session['state'] = 'awaiting_shalom_agency_knowledge'
+            return ("No te preocupes, te explico. El paquete se envía a la agencia Shalom que elijas. Una vez que llega, te avisamos para que puedas ir a recogerlo y pagar el saldo restante. "
+                    "¿Está todo claro y conoces alguna agencia Shalom cercana a ti? (Sí/No)")
+
+    elif current_state == 'awaiting_shalom_agency_knowledge':
+        if 'si' in text or 'sí' in text:
+            session['state'] = 'awaiting_shalom_details'
+            return "¡Genial! Entonces, por favor, bríndame en un solo mensaje tu Nombre Completo, DNI y la dirección de la agencia Shalom que elegiste.✍🏼"
+        else:
+            del user_sessions[user_id]
+            return "Entiendo. En ese caso, no podremos continuar con el envío. Te recomendamos buscar tu agencia más cercana en la página de Shalom para una futura compra. ¡Gracias por tu comprensión!"
+
+    # MODIFICADO: Este bloque ahora genera el resumen y espera la confirmación
+    elif current_state in ['awaiting_delivery_details', 'awaiting_shalom_details']:
+        session['detalles_cliente'] = user_message # Guardamos los datos del cliente temporalmente
+        session['state'] = 'awaiting_final_confirmation' # NUEVO ESTADO
+
+        # Construimos el mensaje de resumen
+        resumen = (
+            "¡Perfecto, ya casi terminamos! ✅\n"
+            "Por favor, revisa que tus datos sean correctos:\n\n"
+            f"Pedido: 1x {session.get('producto_seleccionado', '')}\n"
+            f"Total a Pagar: {session.get('precio_producto', '')}\n\n"
+            f"Datos de Envío:\n{session.get('detalles_cliente', '')}\n\n"
+            "¿Confirmas que todo es correcto para proceder con el envío? (Sí/No)"
+        )
+        return resumen
+
+    # NUEVO BLOQUE: Maneja la respuesta final del cliente
+    elif current_state == 'awaiting_final_confirmation':
+        if 'si' in text or 'sí' in text or 'correcto' in text:
+            # Si el cliente confirma, guardamos el pedido
+            datos_del_pedido = {
+                'producto_seleccionado': session.get('producto_seleccionado'),
+                'precio_producto': session.get('precio_producto'),
+                'tipo_envio': session.get('tipo_envio'),
+                'distrito': session.get('distrito'),
+                'detalles_cliente': session.get('detalles_cliente'),
+                'whatsapp_id': user_id
+            }
+            guardar_pedido_en_sheet(datos_del_pedido)
+            
+            del user_sessions[user_id]
+            return "¡Excelente! Hemos registrado tu pedido con éxito. Un asesor se pondrá en contacto contigo en breve para finalizar los detalles. ¡Gracias por tu compra en Daaqui Joyas! 💖"
+        else:
+            # Si el cliente no confirma, le pedimos que corrija los datos
+            # Reutilizamos el estado anterior para que envíe los datos de nuevo
+            previous_state = 'awaiting_delivery_details' if session.get('tipo_envio') == 'Contra Entrega' else 'awaiting_shalom_details'
+            session['state'] = previous_state
+            return "Entendido. Por favor, envíame nuevamente los datos corregidos en un solo mensaje."
+
     return None
 
-
 # ==============================================================================
-# 5. FUNCIONES INTERNAS DEL BOT (El "motor" que no se toca)
+# 5. FUNCIONES INTERNAS DEL BOT
 # ==============================================================================
 
 @app.route('/api/webhook', methods=['GET', 'POST'])
 def webhook():
-    # (Función sin cambios)
     if request.method == 'GET':
         mode, token, challenge = request.args.get('hub.mode'), request.args.get('hub.verify_token'), request.args.get('hub.challenge')
         if mode == 'subscribe' and token == VERIFY_TOKEN: return challenge
@@ -236,7 +264,6 @@ def webhook():
             return jsonify({'error': str(e)}), 500
 
 def process_message(message, contacts):
-    # (Función sin cambios)
     try:
         from_number = message.get('from')
         if message.get('type') != 'text': return
@@ -249,7 +276,6 @@ def process_message(message, contacts):
         logger.error(f"Error en process_message: {e}")
 
 def send_whatsapp_message(to_number, message_data):
-    # (Función sin cambios)
     if not WHATSAPP_TOKEN or not WHATSAPP_API_URL:
         logger.error("Token de WhatsApp o URL de API no configurados.")
         return
@@ -264,7 +290,6 @@ def send_whatsapp_message(to_number, message_data):
 
 @app.route('/')
 def home():
-    # (Función sin cambios)
     return jsonify({'status': 'Bot Daaqui Activo'})
 
 if __name__ == '__main__':
