@@ -59,37 +59,50 @@ ABREVIATURAS_DISTRITOS = { "sjl": "san juan de lurigancho", "sjm": "san juan de 
 
 
 # ==============================================================================
-# 3. FUNCIONES DE GOOGLE SHEETS
+# 3. FUNCIONES DE GOOGLE SHEETS (CON SELECCIÓN DE HOJA MEJORADA)
 # ==============================================================================
 def guardar_pedido_en_sheet(datos_pedido):
     try:
-        logger.info("Intentando guardar pedido en Google Sheets...")
+        logger.info("[Sheets] Iniciando proceso de guardado...")
         creds_json_str = os.environ.get('GOOGLE_CREDENTIALS_JSON')
         sheet_name = os.environ.get('GOOGLE_SHEET_NAME')
 
         if not creds_json_str or not sheet_name:
-            logger.error("Error: Faltan variables de entorno para Google Sheets.")
+            logger.error("[Sheets] ERROR: Faltan variables de entorno GOOGLE_CREDENTIALS_JSON o GOOGLE_SHEET_NAME.")
             return False
 
+        logger.info("[Sheets] Variables de entorno encontradas. Autenticando...")
         creds_dict = json.loads(creds_json_str)
         gc = gspread.service_account_from_dict(creds_dict)
-        sh = gc.open(sheet_name).sheet1
+        logger.info("[Sheets] Autenticación exitosa.")
+
+        logger.info(f"[Sheets] Abriendo archivo: '{sheet_name}'...")
+        spreadsheet = gc.open(sheet_name)
+        
+        # MODIFICADO: Seleccionamos la hoja de trabajo por su nombre exacto.
+        worksheet_name = "Hoja 1" 
+        sh = spreadsheet.worksheet(worksheet_name)
+        logger.info(f"[Sheets] Hoja de trabajo '{worksheet_name}' abierta correctamente.")
         
         nueva_fila = [
             datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-            datos_pedido.get('producto_seleccionado', ''),
-            datos_pedido.get('precio_producto', ''),
-            datos_pedido.get('tipo_envio', ''),
-            datos_pedido.get('distrito', ''),
-            datos_pedido.get('detalles_cliente', ''),
-            datos_pedido.get('whatsapp_id', '')
+            datos_pedido.get('producto_seleccionado', 'N/A'),
+            datos_pedido.get('precio_producto', 'N/A'),
+            datos_pedido.get('tipo_envio', 'N/A'),
+            datos_pedido.get('distrito', 'N/A'),
+            datos_pedido.get('detalles_cliente', 'N/A'),
+            datos_pedido.get('whatsapp_id', 'N/A')
         ]
         
+        logger.info(f"[Sheets] Datos a guardar: {nueva_fila}")
         sh.append_row(nueva_fila)
-        logger.info(f"¡Éxito! Pedido guardado en la hoja '{sheet_name}'.")
+        logger.info(f"[Sheets] ¡ÉXITO! Pedido guardado en la hoja '{sheet_name}'.")
         return True
+    except gspread.exceptions.WorksheetNotFound:
+        logger.error(f"[Sheets] ERROR CRÍTICO: No se encontró una hoja de trabajo con el nombre '{worksheet_name}' en tu archivo. Por favor, asegúrate de que el nombre de la pestaña sea correcto.")
+        return False
     except Exception as e:
-        logger.error(f"Error inesperado al guardar en Google Sheets: {e}")
+        logger.error(f"[Sheets] ERROR INESPERADO al guardar en Google Sheets: {e}")
         return False
 
 # ==============================================================================
@@ -99,9 +112,11 @@ def guardar_pedido_en_sheet(datos_pedido):
 def verificar_cobertura(texto_usuario):
     texto = texto_usuario.lower().strip().replace('.', '').replace(',', '')
     for distrito in COBERTURA_DELIVERY_LIMA:
-        if distrito in texto: return distrito.title()
+        if re.search(r'\b' + re.escape(distrito) + r'\b', texto):
+            return distrito.title()
     for abreviatura, nombre_completo in ABREVIATURAS_DISTRITOS.items():
-        if re.search(r'\b' + re.escape(abreviatura) + r'\b', texto): return nombre_completo.title()
+        if re.search(r'\b' + re.escape(abreviatura) + r'\b', texto):
+            return nombre_completo.title()
     return None
 
 def buscar_producto(texto_usuario, return_key=False):
@@ -168,13 +183,13 @@ def handle_sales_flow(user_id, user_name, user_message):
             session.update({'state': 'awaiting_delivery_details', 'distrito': distrito_cobertura, 'tipo_envio': 'Contra Entrega'})
             return f"¡Excelente! 🏙️ Tenemos cobertura en {distrito_cobertura}.\nPara completar tu pedido, necesito que me brindes en un solo mensaje: Nombre Completo, Dirección exacta y Referencia del domicilio. ✍🏼"
         else:
-            session.update({'state': 'awaiting_shalom_agreement', 'distrito': user_message.title()})
+            session.update({'state': 'awaiting_shalom_agreement', 'distrito': user_message.title(), 'tipo_envio': 'Shalom'})
             return (f"Entendido. Para {user_message.title()}, los envíos son por la agencia Shalom y requieren un adelanto de {INFO_NEGOCIO['politicas_envio']['envio_shalom']['adelanto_requerido']}. "
                     "El resto lo pagas al recoger tu pedido en la agencia. ¿Estás de acuerdo con estas condiciones? (Sí/No)")
 
     elif current_state == 'awaiting_shalom_agreement':
         if 'si' in text or 'sí' in text or 'de acuerdo' in text:
-            session['state'] = 'awaiting_shalom_experience'
+            session.update({'state': 'awaiting_shalom_experience', 'tipo_envio': 'Shalom'})
             return "¿Alguna vez has recogido un pedido en una agencia Shalom? (Sí/No)"
         else:
             del user_sessions[user_id]
@@ -213,23 +228,20 @@ def handle_sales_flow(user_id, user_name, user_message):
 
     elif current_state == 'awaiting_final_confirmation':
         if 'si' in text or 'sí' in text or 'correcto' in text:
-            # CORREGIDO: Llamada a la función de guardado
             datos_del_pedido = {
                 'producto_seleccionado': session.get('producto_seleccionado'),
                 'precio_producto': session.get('precio_producto'),
-                'tipo_envio': session.get('tipo_envio', 'Shalom'), # Añadido un default
+                'tipo_envio': session.get('tipo_envio'),
                 'distrito': session.get('distrito'),
                 'detalles_cliente': session.get('detalles_cliente'),
                 'whatsapp_id': user_id
             }
             guardado_exitoso = guardar_pedido_en_sheet(datos_del_pedido)
             
-            # Solo borramos la sesión si el guardado fue exitoso
             if guardado_exitoso:
                 del user_sessions[user_id]
                 return "¡Excelente! Hemos registrado tu pedido con éxito. Un asesor se pondrá en contacto contigo en breve para finalizar los detalles. ¡Gracias por tu compra en Daaqui Joyas! 💖"
             else:
-                # Si falla el guardado, informamos al usuario y al log
                 logger.error(f"Fallo crítico al guardar el pedido para {user_id}. La sesión no se borrará para reintentar.")
                 return "¡Uy! Tuvimos un problema al registrar tu pedido. Por favor, intenta confirmar nuevamente en un momento."
         
@@ -240,7 +252,6 @@ def handle_sales_flow(user_id, user_name, user_message):
         
         else:
             return "Por favor, responde con 'Sí' para confirmar o 'No' para corregir tus datos."
-
 
     return None
 
