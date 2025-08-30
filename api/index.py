@@ -211,7 +211,6 @@ def handle_sales_flow(user_id, user_name, user_message):
         )
         return resumen
 
-    # MODIFICADO: Esta sección ahora maneja la respuesta "No" de forma inteligente
     elif current_state == 'awaiting_final_confirmation':
         if 'si' in text or 'sí' in text or 'correcto' in text:
             datos_del_pedido = {
@@ -227,14 +226,12 @@ def handle_sales_flow(user_id, user_name, user_message):
             del user_sessions[user_id]
             return "¡Excelente! Hemos registrado tu pedido con éxito. Un asesor se pondrá en contacto contigo en breve para finalizar los detalles. ¡Gracias por tu compra en Daaqui Joyas! 💖"
         
-        # MEJORA: Si el cliente dice "no", le pedimos que corrija los datos.
         elif 'no' in text:
-            # Determinamos a qué estado anterior debe volver el bot
             previous_state = 'awaiting_delivery_details' if session.get('tipo_envio') == 'Contra Entrega' else 'awaiting_shalom_details'
             session['state'] = previous_state
-            return "Entendido. Por favor, envíame nuevamente los datos corregidos en un solo mensaje."
+            # MODIFICADO: Instrucción más clara para el cliente
+            return "Entendido. Para corregirlo, por favor, envíame **toda la información de envío de nuevo** (nombre, dirección, etc.) con los datos correctos en un solo mensaje."
         
-        # Si no es ni "sí" ni "no", el bot se queda esperando una respuesta clara
         else:
             return "Por favor, responde con 'Sí' para confirmar o 'No' para corregir tus datos."
 
