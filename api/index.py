@@ -1,23 +1,29 @@
+# ==========================================================
+# 1. IMPORTACIONES Y CONFIGURACIÓN INICIAL
+# ==========================================================
 from flask import Flask, request, jsonify
 import requests
 import logging
 import os
 from datetime import datetime
 
-# Configurar logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Configuración de variables de entorno
+# Configuración de variables de entorno de WhatsApp
 WHATSAPP_TOKEN = os.environ.get('WHATSAPP_ACCESS_TOKEN')
 VERIFY_TOKEN = os.environ.get('WHATSAPP_VERIFY_TOKEN', 'JoyasBot2025!')
 PHONE_NUMBER_ID = os.environ.get('WHATSAPP_PHONE_NUMBER_ID', '')
 WHATSAPP_API_URL = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages" if PHONE_NUMBER_ID else None
 
+# Diccionario para guardar el estado de la conversación de cada usuario (la "memoria" del bot)
+user_sessions = {}
+
+
 # ==============================================================================
-# ====> ÁREA DE CONFIGURACIÓN DEL NEGOCIO (Aquí es donde modificas todo) <====
+# 2. ÁREA DE CONFIGURACIÓN DEL NEGOCIO (Aquí es donde modificas TODO en el futuro)
 # ==============================================================================
 
 INFO_NEGOCIO = {
@@ -28,15 +34,15 @@ INFO_NEGOCIO = {
             "material": "Acero inoxidable quirúrgico de alta calidad",
             "propiedades": "Piedra termocrómica que cambia de color con la temperatura.",
             "palabras_clave": [
-                "1",  # Para responder al menú
+                "1",
                 "sol radiant", 
                 "collar mágico", 
                 "collar que cambia color",
-                "precio y es ideal para regalo" # Para el mensaje de la publicidad
+                "precio y es ideal para regalo"
             ]
         }
-        # Para agregar más productos, solo copia y pega el bloque de "producto_1"
-        # y cámbialo a "producto_2", "producto_3", etc.
+        # Para agregar más productos, copia el bloque "producto_1", pégalo aquí
+        # y cámbialo a "producto_2" con sus nuevos datos.
     },
     "politicas_envio": {
         "delivery_lima": {
@@ -86,10 +92,10 @@ ABREVIATURAS_DISTRITOS = {
     "ves": "villa el salvador",
     "lima centro": "cercado de lima"
 }
-# ==============================================================================
-# ====> FIN DEL ÁREA DE CONFIGURACIÓN <==== (Normalmente no necesitas tocar nada debajo de esta línea)
-# ==============================================================================
 
+# ==============================================================================
+# 3. FUNCIONES DE LÓGICA DEL BOT (El "cerebro" del bot)
+# ==============================================================================
 
 def verificar_cobertura(texto_usuario):
     """Verifica si el texto menciona un distrito con cobertura."""
@@ -102,23 +108,19 @@ def verificar_cobertura(texto_usuario):
             return nombre_completo.title()
     return None
 
-# ==============================================================================
-# ====> LÓGICA DE RESPUESTAS DEL BOT (El "cerebro" que decide qué responder) <====
-# ==============================================================================
-
-def generate_response(text, name):
-    """Genera respuestas automáticas utilizando la base de datos del negocio."""
+def generate_response(text, name, from_number):
+    """Genera respuestas para consultas simples o inicia el flujo de ventas."""
     text = text.lower()
     
-    # --- Verificación de Cobertura ---
+    # --- ACTIVADOR DEL FLUJO DE VENTAS ---
+    if any(palabra in text for palabra in ['comprar', 'pedido', 'coordinar', 'quiero uno']):
+        user_sessions[from_number] = {'state': 'awaiting_district'}
+        return "¡Perfecto! ✨ Para empezar a coordinar tu pedido, por favor, indícame tu distrito."
+
+    # --- Verificación de Cobertura (Consulta simple) ---
     distrito_encontrado = verificar_cobertura(text)
     if distrito_encontrado:
-        politica_delivery = INFO_NEGOCIO['politicas_envio']['delivery_lima']
-        return (f"¡Buenas noticias, {name}! Sí tenemos cobertura de delivery contra entrega en {distrito_encontrado}. 🎉\n\n"
-                f"Modalidad: {politica_delivery['modalidad']}\n"
-                f"Costo: {politica_delivery['costo']}\n"
-                f"Tiempo: {politica_delivery['tiempo_entrega']}\n\n"
-                f"¿Te gustaría coordinar tu pedido?")
+        return f"¡Buenas noticias, {name}! Sí tenemos cobertura de delivery contra entrega en {distrito_encontrado}. 🎉 Puedes iniciar tu pedido escribiendo 'comprar'."
 
     # --- Consultas de Productos ---
     producto_1 = INFO_NEGOCIO['productos']['producto_1']
@@ -127,96 +129,77 @@ def generate_response(text, name):
                 f"Es una joya única con una {producto_1['propiedades']}.\n"
                 f"Material: {producto_1['material']}.\n"
                 f"Precio: {producto_1['precio']}.\n\n"
-                f"¡Es perfecto para regalo! ¿Lo quieres para ti o para alguien especial?")
+                f"Para ordenarlo, solo escribe 'comprar'.")
 
-    # --- Consultas de Políticas y Datos Generales ---
-    if any(palabra in text for palabra in ['envío', 'delivery', 'entrega', 'shalom', 'cobertura']):
-        delivery = INFO_NEGOCIO['politicas_envio']['delivery_lima']
-        shalom = INFO_NEGOCIO['politicas_envio']['envio_shalom']
-        return (f"¡Claro, {name}! Manejamos dos tipos de envío:\n\n"
-                f"1️⃣ *Delivery para Lima (con cobertura):*\n"
-                f"- Modalidad: {delivery['modalidad']}\n"
-                f"- Costo: {delivery['costo']}\n"
-                f"- Tiempo: {delivery['tiempo_entrega']}\n\n"
-                f"2️⃣ *Envío Nacional y Lima (sin cobertura):*\n"
-                f"- Empresa: Shalom (recojo en agencia)\n"
-                f"- Costo: {shalom['costo']}\n"
-                f"- Adelanto: {shalom['adelanto_requerido']}\n"
-                f"- Tiempo: {shalom['tiempo_entrega_provincias']}\n\n"
-                f"Dime tu distrito para confirmarte tu tipo de envío.")
-
+    # --- Consultas Generales ---
+    if any(palabra in text for palabra in ['envío', 'delivery', 'entrega', 'shalom']):
+        return ("Manejamos delivery contra entrega para la mayoría de distritos de Lima y envíos por Shalom para provincias. Para saber tu caso, dime tu distrito o escribe 'comprar' para iniciar.")
     if any(palabra in text for palabra in ['pago', 'pagar', 'yape', 'plin', 'métodos']):
-        pagos = INFO_NEGOCIO['datos_generales']['metodos_pago']
-        return (f"¡Claro! Estos son nuestros métodos de pago:\n\n"
-                f"💳 *Para Delivery en Lima:*\n{pagos['contra_entrega']}\n\n"
-                f"💸 *Para envíos por Shalom:*\n{pagos['adelanto_shalom']}")
+        return (f"Aceptamos Yape, Plin, efectivo y transferencia. Los detalles te los damos al coordinar tu pedido. Escribe 'comprar' para empezar.")
+    if 'garantia' in text: return INFO_NEGOCIO['datos_generales']['garantia']
+    if 'material' in text: return INFO_NEGOCIO['datos_generales']['material_joyas']
+    if any(palabra in text for palabra in ['medida', 'tamaño', 'largo', 'cadena']): return INFO_NEGOCIO['datos_generales']['medida_cadena']
+    if any(palabra in text for palabra in ['empaque', 'caja', 'regalo']): return INFO_NEGOCIO['datos_generales']['empaque']
+    if any(palabra in text for palabra in ['tienda', 'física', 'local', 'ubicacion']): return INFO_NEGOCIO['datos_generales']['tienda_fisica']
 
-    if 'garantia' in text:
-        return INFO_NEGOCIO['datos_generales']['garantia']
-
-    if 'material' in text:
-        return INFO_NEGOCIO['datos_generales']['material_joyas']
-        
-    if any(palabra in text for palabra in ['medida', 'tamaño', 'largo', 'cadena']):
-        return INFO_NEGOCIO['datos_generales']['medida_cadena']
-
-    if any(palabra in text for palabra in ['empaque', 'caja', 'regalo']):
-        return INFO_NEGOCIO['datos_generales']['empaque']
-        
-    if any(palabra in text for palabra in ['tienda', 'física', 'local', 'ubicacion']):
-        return INFO_NEGOCIO['datos_generales']['tienda_fisica']
-
-    # --- Saludos y Respuestas Genéricas (CON SOLUCIÓN PARA ERRORES DE TIPEO) ---
+    # --- Saludos y Bienvenida ---
     saludos_comunes = ['hola', 'hila', 'ola', 'buenos', 'buenas', 'bnas', 'qué tal', 'q tal', 'info']
     if any(saludo in text for saludo in saludos_comunes):
-        productos_disponibles = []
-        if 'producto_1' in INFO_NEGOCIO['productos']:
-            productos_disponibles.append("1️⃣ Collar Sol Radiant (Brilla con tu energía)")
-        
+        productos_disponibles = [f"1️⃣ {INFO_NEGOCIO['productos']['producto_1']['nombre_completo']}"]
         texto_productos = "\n".join(productos_disponibles)
-        
         return (f"¡Hola {name}! 👋✨ Soy tu asesora virtual de Daaqui Joyas. ¡Bienvenid@!\n\n"
-                f"Actualmente tenemos en stock estas joyas mágicas con envío gratis:\n\n"
-                f"{texto_productos}\n\n"
+                f"Actualmente tenemos en stock estas joyas mágicas con envío gratis:\n\n{texto_productos}\n\n"
                 f"Escribe el número o el nombre del collar que te gustaría conocer. También puedes preguntar por 'envío' o 'pagos'.")
-        
-    if any(palabra in text for palabra in ['gracias', 'grs', 'perfecto', 'genial', 'ok']):
-        return f"¡De nada, {name}! 😊✨ Si tienes alguna otra consulta, no dudes en preguntar."
-    
-    if any(palabra in text for palabra in ['adiós', 'bye', 'hasta luego', 'chao']):
-        return f"¡Hasta pronto, {name}! 👋✨ Fue un placer atenderte. Te esperamos en Daaqui Joyas."
-
 
     # --- Respuesta por Defecto ---
     else:
-        return f"¡Hola {name}! 👋 Gracias por tu mensaje. No entendí muy bien tu consulta. ¿Podrías reformularla? Puedes preguntar sobre:\n\n- El 'collar sol radiant'\n- Métodos de envío\n- Cobertura de delivery\n- Métodos de pago"
+        return f"¡Hola {name}! 👋 No entendí muy bien tu consulta. Puedes preguntar sobre:\n\n- El 'collar sol radiant'\n- Métodos de envío\n- Cobertura de delivery"
+
+
+def handle_sales_flow(user_id, user_name, user_message):
+    """Maneja la conversación del flujo de ventas paso a paso."""
+    current_state = user_sessions.get(user_id, {}).get('state')
+
+    if current_state == 'awaiting_district':
+        distrito = verificar_cobertura(user_message)
+        if distrito:
+            user_sessions[user_id].update({'state': 'delivery_confirmation', 'distrito': distrito})
+            return f"¡Perfecto, delivery para {distrito}! 🎉 El pago es contra entrega. Para confirmar, por favor, envíame tu nombre completo, DNI y número de celular."
+        else:
+            user_sessions[user_id].update({'state': 'shalom_confirmation', 'distrito': user_message.title()})
+            return f"Entendido. Para {user_message.title()} el envío es por Shalom. Se requiere un adelanto de {INFO_NEGOCIO['politicas_envio']['envio_shalom']['adelanto_requerido']}. Si estás de acuerdo, envíame tu nombre completo, DNI y celular."
+
+    elif current_state == 'delivery_confirmation' or current_state == 'shalom_confirmation':
+        # --- AQUÍ IRÍA LA LÓGICA PARA GUARDAR EN GOOGLE SHEETS ---
+        logger.info(f"NUEVA VENTA ({current_state}): Cliente {user_message}, Distrito: {user_sessions[user_id]['distrito']}")
+        del user_sessions[user_id]
+        return "¡Excelente! Hemos registrado tu pedido. Un asesor se pondrá en contacto contigo en breve para coordinar los últimos detalles. ¡Gracias por tu compra en Daaqui Joyas!"
+    
+    return None
 
 # ==============================================================================
-# ====> LÓGICA INTERNA DEL BOT (Normalmente no necesitas tocar esto) <====
+# 4. FUNCIONES INTERNAS DEL BOT (Normalmente no se tocan)
 # ==============================================================================
 
 @app.route('/api/webhook', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
-        mode = request.args.get('hub.mode')
-        token = request.args.get('hub.verify_token')
-        challenge = request.args.get('hub.challenge')
+        mode, token, challenge = request.args.get('hub.mode'), request.args.get('hub.verify_token'), request.args.get('hub.challenge')
         if mode == 'subscribe' and token == VERIFY_TOKEN:
             logger.info("Webhook verificado exitosamente")
             return challenge
         else:
-            logger.warning(f"Verificación fallida - Token esperado: {VERIFY_TOKEN}, Token recibido: {token}")
+            logger.warning(f"Verificación fallida")
             return 'Forbidden', 403
     elif request.method == 'POST':
         try:
             data = request.get_json()
-            logger.info(f"Datos recibidos: {data}")
             if data.get('object') == 'whatsapp_business_account':
                 for entry in data.get('entry', []):
                     for change in entry.get('changes', []):
-                        if change.get('field') == 'messages':
-                            value = change.get('value', {})
-                            for message in value.get('messages', []):
+                        value = change.get('value', {})
+                        if change.get('field') == 'messages' and value.get('messages'):
+                            for message in value.get('messages'):
                                 process_message(message, value.get('contacts', []))
             return jsonify({'status': 'success'}), 200
         except Exception as e:
@@ -224,70 +207,43 @@ def webhook():
             return jsonify({'error': str(e)}), 500
 
 def process_message(message, contacts):
-    """Procesa un mensaje entrante y envía una respuesta."""
+    """Decide si es una consulta simple o parte de un flujo y la procesa."""
     try:
         from_number = message.get('from')
         message_type = message.get('type')
-        contact_name = "Usuario"
-        for contact in contacts:
-            if contact.get('wa_id') == from_number:
-                contact_name = contact.get('profile', {}).get('name', 'Usuario')
-                break
+        if message_type != 'text': return # Solo procesamos mensajes de texto
+
+        contact_name = next((contact.get('profile', {}).get('name', 'Usuario') for contact in contacts if contact.get('wa_id') == from_number), 'Usuario')
+        text_body = message.get('text', {}).get('body', '')
         
-        logger.info(f"Procesando mensaje de {contact_name} ({from_number})")
+        logger.info(f"Procesando de {contact_name} ({from_number}): '{text_body}'")
         
-        if message_type == 'text':
-            text_body = message.get('text', {}).get('body', '').lower()
-            logger.info(f"Mensaje de texto: {text_body}")
-            
-            response_text = generate_response(text_body, contact_name)
-            
-            if response_text:
-                ### CAMBIO 1: Ahora convertimos el texto a un payload ###
-                text_payload = {"type": "text", "text": {"body": response_text}}
-                send_whatsapp_message(from_number, text_payload)
+        response_text = handle_sales_flow(from_number, contact_name, text_body) if from_number in user_sessions else generate_response(text_body, contact_name, from_number)
         
-        elif message_type in ['image', 'document', 'audio', 'video']:
-            logger.info(f"Mensaje multimedia recibido: {message_type}")
-            multimedia_response_payload = {"type": "text", "text": {"body": f"¡Hola {contact_name}! He recibido tu {message_type}. ¿En qué puedo ayudarte con nuestras joyas? 💎✨"}}
-            send_whatsapp_message(from_number, multimedia_response_payload)
-        
+        if response_text:
+            send_whatsapp_message(from_number, {"type": "text", "text": {"body": response_text}})
     except Exception as e:
-        logger.error(f"Error procesando mensaje: {e}")
+        logger.error(f"Error en process_message: {e}")
 
 def send_whatsapp_message(to_number, message_data):
-    """Envía un mensaje de WhatsApp usando un payload de datos."""
+    """Envía un mensaje de WhatsApp."""
     if not WHATSAPP_TOKEN or not WHATSAPP_API_URL:
         logger.error("Token de WhatsApp o URL de API no configurados.")
-        return False
+        return
     
     headers = {'Authorization': f'Bearer {WHATSAPP_TOKEN}', 'Content-Type': 'application/json'}
-    
-    ### CAMBIO 2: La función ahora es más flexible ###
-    data = {"messaging_product": "whatsapp", "to": to_number}
-    data.update(message_data)
+    data = {"messaging_product": "whatsapp", "to": to_number, **message_data}
     
     try:
         response = requests.post(WHATSAPP_API_URL, headers=headers, json=data)
-        if response.status_code == 200:
-            logger.info(f"Mensaje enviado exitosamente a {to_number}")
-            return True
-        else:
-            logger.error(f"Error enviando mensaje: {response.status_code} - {response.text}")
-            return False
-    except Exception as e:
-        logger.error(f"Excepción enviando mensaje: {e}")
-        return False
+        response.raise_for_status()
+        logger.info(f"Mensaje enviado a {to_number}")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error enviando mensaje: {e.response.text if e.response else e}")
 
-# Endpoints adicionales (normalmente no se tocan)
-@app.route('/api/health', methods=['GET'])
-def health():
-    return jsonify({'status': 'healthy', 'timestamp': datetime.now().isoformat()})
-
-@app.route('/api', methods=['GET'])
-@app.route('/', methods=['GET'])
+@app.route('/')
 def home():
-    return jsonify({'message': 'Bot de WhatsApp para Joyería Daaqui', 'status': 'active'})
+    return jsonify({'status': 'Bot Daaqui Activo'})
 
 if __name__ == '__main__':
     app.run(debug=True)
