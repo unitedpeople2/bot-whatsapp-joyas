@@ -79,10 +79,9 @@ def guardar_pedido_en_sheet(datos_pedido):
         logger.info(f"[Sheets] Abriendo archivo: '{sheet_name}'...")
         spreadsheet = gc.open(sheet_name)
         
-        # MODIFICADO: Seleccionamos la hoja de trabajo por su nombre exacto.
-        worksheet_name = "Hoja 1" 
-        sh = spreadsheet.worksheet(worksheet_name)
-        logger.info(f"[Sheets] Hoja de trabajo '{worksheet_name}' abierta correctamente.")
+        # MODIFICADO: Seleccionamos la primera hoja de trabajo disponible, sea cual sea su nombre.
+        sh = spreadsheet.sheet1
+        logger.info(f"[Sheets] Hoja de trabajo '{sh.title}' seleccionada correctamente.")
         
         nueva_fila = [
             datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
@@ -98,9 +97,6 @@ def guardar_pedido_en_sheet(datos_pedido):
         sh.append_row(nueva_fila)
         logger.info(f"[Sheets] ¡ÉXITO! Pedido guardado en la hoja '{sheet_name}'.")
         return True
-    except gspread.exceptions.WorksheetNotFound:
-        logger.error(f"[Sheets] ERROR CRÍTICO: No se encontró una hoja de trabajo con el nombre '{worksheet_name}' en tu archivo. Por favor, asegúrate de que el nombre de la pestaña sea correcto.")
-        return False
     except Exception as e:
         logger.error(f"[Sheets] ERROR INESPERADO al guardar en Google Sheets: {e}")
         return False
