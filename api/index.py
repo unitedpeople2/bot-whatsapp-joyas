@@ -86,7 +86,7 @@ INFO_NEGOCIO = {
         }
     }
 }
-TODOS_LOS_DISTRITOS_LIMA = [ "ancón", "ate", "barranco", "breña", "carabayllo", "chaclacayo", "chorrillos", "cieneguilla", "comas", "el agustino", "independencia", "jesús maría", "la molina", "la victoria", "lince", "los olivos", "lurigancho-chosica", "lurín", "magdalena del mar", "miraflores", "pachacámac", "pucusana", "pueblo libre", "puente piedra", "punta hermosa", "punta negra", "rímac", "san bartolo", "san borja", "san isidro", "san juan de lurigancho", "san juan de miraflores", "san luis", "san martín de porres", "san miguel", "santa anita", "santa maría del mar", "santa rosa", "santiago de surco", "surquillo", "villa el salvador", "villa maría del triunfo", "cercado de lima", "bellavista", "carmen de la legua", "la perla", "la punta", "ventanilla", "callao" ]
+TODOS_LOS_DISTRITOS_LIMA = [ "ancón", "ate", "barranco", "breña", "carabayllo", "chaclacayo", "chorrillos", "cieneguilla", "comas", "el agustino", "independencia", "jesús maría", "la molina", "la victoria", "lince", "los olivos", "lurigancho-chosica", "chosica", "lurín", "magdalena del mar", "miraflores", "pachacámac", "pucusana", "pueblo libre", "puente piedra", "punta hermosa", "punta negra", "rímac", "san bartolo", "san borja", "san isidro", "san juan de lurigancho", "san juan de miraflores", "san luis", "san martín de porres", "san miguel", "santa anita", "santa maría del mar", "santa rosa", "santiago de surco", "surquillo", "villa el salvador", "villa maría del triunfo", "cercado de lima", "bellavista", "carmen de la legua", "la perla", "la punta", "ventanilla", "callao" ]
 COBERTURA_DELIVERY_LIMA = [ "ate", "barranco", "bellavista", "breña", "callao", "carabayllo", "carmen de la legua", "cercado de lima", "chorrillos", "comas", "el agustino", "independencia", "jesus maria", "la molina", "la perla", "la punta", "la victoria", "lince", "los olivos", "magdalena", "miraflores", "pueblo libre", "puente piedra", "rimac", "san borja", "san isidro", "san juan de lurigancho", "san juan de miraflores", "san luis", "san martin de porres", "san miguel", "santa anita", "surco", "surquillo", "villa el salvador", "villa maria del triunfo" ]
 ABREVIATURAS_DISTRITOS = { "sjl": "san juan de lurigancho", "sjm": "san juan de miraflores", "smp": "san martin de porres", "vmt": "villa maria del triunfo", "ves": "villa el salvador", "lima centro": "cercado de lima" }
 PALABRAS_CANCELACION = ["cancelar", "cancelo", "ya no quiero", "ya no", "mejor no", "detener", "no gracias"]
@@ -170,9 +170,13 @@ def verificar_cobertura(texto_usuario):
 
 def es_distrito_de_lima(texto_usuario):
     texto = texto_usuario.lower().strip()
+    # Priorizar nombres completos para evitar falsos positivos
     for distrito in TODOS_LOS_DISTRITOS_LIMA:
         if re.search(r'\b' + re.escape(distrito) + r'\b', texto):
             return distrito.title()
+    for abreviatura, nombre_completo in ABREVIATURAS_DISTRITOS.items():
+        if re.search(r'\b' + re.escape(abreviatura) + r'\b', texto):
+            return nombre_completo.title()
     return None
 
 def buscar_producto(texto_usuario, return_key=False):
@@ -186,15 +190,15 @@ def buscar_producto(texto_usuario, return_key=False):
 def generate_response(text, name, from_number):
     text = text.lower()
     distrito_encontrado = verificar_cobertura(text)
-    if distrito_encontrado: return f"¡Buenas noticias, {name}! Sí tenemos cobertura de delivery contra entrega en {distrito_encontrado}. 🎉 Puedes iniciar tu pedido escribiendo 'comprar'."
+    if distrito_encontrado: return f"¡Buenas noticias, {name}! Sí tenemos cobertura de delivery contra entrega en *{distrito_encontrado}*. 🎉\n\nPuedes iniciar tu pedido escribiendo 'comprar'."
     producto_encontrado = buscar_producto(text)
-    if producto_encontrado: return (f"¡Te refieres a nuestro increíble {producto_encontrado['nombre_completo']}! ☀️\n\n" f"Características: {producto_encontrado['propiedades']}.\n" f"Material: {producto_encontrado['material']}.\nPrecio: {producto_encontrado['precio']}.\n\n" f"Para ordenarlo, solo escribe 'comprar'.")
+    if producto_encontrado: return (f"¡Te refieres a nuestro increíble *{producto_encontrado['nombre_completo']}*! ☀️\n\n" f"*{producto_encontrado['propiedades']}*\n" f"Material: {producto_encontrado['material']}.\n*Precio: {producto_encontrado['precio']}*.\n\n" f"Para ordenarlo, solo escribe 'comprar'.")
     saludos_comunes = ['hola', 'hila', 'ola', 'buenos', 'buenas', 'bnas', 'qué tal', 'q tal', 'info']
     if any(saludo in text for saludo in saludos_comunes):
-        productos_disponibles = [f"{idx+1}️⃣ {INFO_NEGOCIO['productos'][key]['nombre_completo']}" for idx, key in enumerate(INFO_NEGOCIO['productos'])]
+        productos_disponibles = [f"*{idx+1}️⃣ {INFO_NEGOCIO['productos'][key]['nombre_completo']}*" for idx, key in enumerate(INFO_NEGOCIO['productos'])]
         texto_productos = "\n".join(productos_disponibles)
-        return (f"¡Hola {name}! 👋✨ Soy tu asesora virtual de Daaqui Joyas.\n\n" f"Tenemos en stock estas joyas mágicas con envío gratis:\n\n{texto_productos}\n\n" f"Escribe el número o el nombre del producto que te gustaría conocer.")
-    return f"¡Hola {name}! 👋 No entendí tu consulta. Puedes preguntar sobre nuestros productos, 'envío' o 'pagos'."
+        return (f"¡Hola {name}! 👋✨ Soy tu asesora virtual de Daaqui Joyas.\n\n" f"Tenemos en stock estas joyas mágicas con *envío gratis*:\n\n{texto_productos}\n\n" f"Escribe el *número* o el *nombre* del producto que te gustaría conocer.")
+    return f"¡Hola {name}! 👋 No entendí tu consulta. Puedes preguntar sobre nuestros *productos*, *envío* o *pagos*."
 
 # ==============================================================================
 # 5. LÓGICA DE VENTA - AHORA USANDO FIRESTORE
@@ -216,54 +220,82 @@ def handle_sales_flow(user_id, user_name, user_message, session):
             session['producto_seleccionado'] = producto_info['nombre_completo']
             session['precio_producto'] = producto_info['precio']
             save_session(user_id, session)
-            return f"¡Confirmado: {producto_info['nombre_completo']}! Para continuar, por favor, dime: ¿eres de Lima o de provincia?"
-        return "No pude identificar el producto. Por favor, intenta con el número o nombre exacto."
+            return f"¡Confirmado: *{producto_info['nombre_completo']}*! Para continuar, por favor, dime: ¿eres de *Lima* o de *provincia*?"
+        return "No pude identificar el producto. Por favor, intenta con el *número* o *nombre exacto*."
+
     elif current_state == 'awaiting_location':
+        if 'provincia' in text:
+            session['state'] = 'awaiting_province_details'
+            save_session(user_id, session)
+            return "¡Entendido! Para continuar, por favor, indícame tu *provincia y distrito*. ✍️"
+        
         distrito_lima = es_distrito_de_lima(text)
         if distrito_lima:
-            if distrito_lima.lower() in COBERTURA_DELIVERY_LIMA:
+            if distrito_lima.lower() in [d.lower() for d in COBERTURA_DELIVERY_LIMA]:
                 session.update({'state': 'awaiting_delivery_details', 'distrito': distrito_lima, 'tipo_envio': 'Contra Entrega'})
                 save_session(user_id, session)
-                return f"¡Excelente! 🏙️ Tenemos cobertura en {distrito_lima}.\nPara completar tu pedido, necesito que me brindes en un solo mensaje: Nombre Completo, Dirección exacta y Referencia del domicilio. ✍🏼"
+                return f"¡Excelente! 🏙️ Tenemos cobertura en *{distrito_lima}*.\n\nPara completar tu pedido, necesito que me brindes en *un solo mensaje*: Nombre Completo, Dirección exacta y Referencia del domicilio. ✍🏼"
             else:
                 session.update({'state': 'awaiting_shalom_agreement', 'distrito': distrito_lima, 'tipo_envio': 'Shalom'})
                 save_session(user_id, session)
-                return (f"Entendido. Para {distrito_lima}, los envíos son por Shalom y requieren un adelanto de {INFO_NEGOCIO['politicas_envio']['envio_shalom']['adelanto_requerido']}. " "¿Estás de acuerdo? (Sí/No)")
+                mensaje = (f"¡Perfecto! Para envíos a *{distrito_lima}*, usamos la agencia *Shalom* para que tu joya llegue de forma segura. ✨\n\n"
+                           f"Para separar tu producto y gestionar el envío, requerimos un adelanto de *S/ 20.00*. Este monto funciona como un *compromiso para el recojo del pedido* en la agencia y nos permite enviarlo con total confianza.\n\n"
+                           "¿Estás de acuerdo para continuar? (Sí/No)")
+                return mensaje
+        
         elif 'lima' in text:
             session['state'] = 'awaiting_lima_district'
             save_session(user_id, session)
-            return "¡Genial! Para saber qué tipo de envío te corresponde, por favor, indícame tu distrito."
-        elif 'provincia' in text:
-            session.update({'state': 'awaiting_shalom_agreement', 'distrito': 'Provincia', 'tipo_envio': 'Shalom'})
-            save_session(user_id, session)
-            return (f"Entendido. Para provincia, los envíos son por agencia Shalom y requieren un adelanto de {INFO_NEGOCIO['politicas_envio']['envio_shalom']['adelanto_requerido']}. "
-                    "¿Estás de acuerdo? (Sí/No)")
+            # Caso C: Pregunta inicial para saber el distrito del cliente
+            return "¡Genial! ✨ Para empezar a coordinar la entrega de tu joya, por favor, dime: ¿en qué *distrito* te encuentras? 📍"
+        
         else:
-            return "¿Eres de Lima o de provincia? Por favor, responde con una de esas dos opciones."
+            return "¿Eres de *Lima* o de *provincia*? Por favor, responde con una de esas dos opciones."
+
     elif current_state == 'awaiting_lima_district':
         distrito_cobertura = verificar_cobertura(text)
         if distrito_cobertura:
             session.update({'state': 'awaiting_delivery_details', 'distrito': distrito_cobertura, 'tipo_envio': 'Contra Entrega'})
             save_session(user_id, session)
-            return f"¡Excelente! 🏙️ Tenemos cobertura en {distrito_cobertura}.\nPara completar tu pedido, necesito que me brindes en un solo mensaje: Nombre Completo, Dirección exacta y Referencia del domicilio. ✍🏼"
+            return f"¡Excelente! 🏙️ Tenemos cobertura en *{distrito_cobertura}*.\n\nPara completar tu pedido, necesito que me brindes en *un solo mensaje*: Nombre Completo, Dirección exacta y Referencia del domicilio. ✍🏼"
         else:
-            distrito_sin_cobertura = user_message.title()
-            session.update({'state': 'awaiting_shalom_agreement', 'distrito': distrito_sin_cobertura, 'tipo_envio': 'Shalom'})
+            distrito_detectado = es_distrito_de_lima(text)
+            distrito_para_guardar = distrito_detectado if distrito_detectado else user_message.title()
+            
+            session.update({'state': 'awaiting_shalom_agreement', 'distrito': distrito_para_guardar, 'tipo_envio': 'Shalom'})
             save_session(user_id, session)
-            return (f"Entendido. Para {distrito_sin_cobertura}, los envíos son por Shalom y requieren un adelanto de {INFO_NEGOCIO['politicas_envio']['envio_shalom']['adelanto_requerido']}. " "¿Estás de acuerdo? (Sí/No)")
+            mensaje = (f"¡Perfecto! Para envíos a *{distrito_para_guardar}*, usamos la agencia *Shalom* para que tu joya llegue de forma segura. ✨\n\n"
+                       f"Para separar tu producto y gestionar el envío, requerimos un adelanto de *S/ 20.00*. Este monto funciona como un *compromiso para el recojo del pedido* en la agencia y nos permite enviarlo con total confianza.\n\n"
+                       "¿Estás de acuerdo para continuar? (Sí/No)")
+            return mensaje
+
+    elif current_state == 'awaiting_province_details':
+        session['distrito'] = user_message.title() # Guarda Provincia y Distrito
+        session['state'] = 'awaiting_shalom_agreement'
+        session['tipo_envio'] = 'Shalom'
+        save_session(user_id, session)
+        # Caso D: Explicación inicial sobre el adelanto
+        mensaje = ("¡Perfecto! Para envíos a provincia, usamos la agencia *Shalom* para que tu joya llegue de forma segura. ✨\n\n"
+                   "Para separar tu producto y gestionar el envío, requerimos un adelanto de *S/ 20.00*. Este monto funciona como un *compromiso para el recojo del pedido* en la agencia y nos permite enviarlo con total confianza.\n\n"
+                   "¿Estás de acuerdo para continuar? (Sí/No)")
+        return mensaje
+
     elif current_state == 'awaiting_shalom_agreement':
         if 'si' in text or 'sí' in text or 'de acuerdo' in text:
             session['state'] = 'awaiting_shalom_experience'
             save_session(user_id, session)
-            return "¿Alguna vez has recogido un pedido en una agencia Shalom? (Sí/No)"
+            return "¿Alguna vez has recogido un pedido en una agencia *Shalom*? (Sí/No)"
         else:
+            # Caso A: Respuesta cuando el cliente dice "No" al adelanto
             delete_session(user_id)
-            return "Entiendo. Si cambias de opinión, aquí estaremos. ¡Gracias!"
+            return ("Comprendo perfectamente. ✨ El adelanto es la única forma que tenemos para poder *separar la joya a tu nombre* y que no se venda a otra persona, ¡nuestro stock es bastante exclusivo!\n\n"
+                    "Si te animas más tarde, no dudes en volver a escribirme. ¿Tienes alguna otra consulta sobre nuestros productos o materiales? 😊")
+
     elif current_state == 'awaiting_shalom_experience':
         if 'si' in text or 'sí' in text:
             session['state'] = 'awaiting_shalom_details'
             save_session(user_id, session)
-            return "¡Perfecto! Bríndame en un solo mensaje tu Nombre Completo, DNI, Provincia y Distrito, y la dirección de la agencia Shalom donde recoges.✍🏼"
+            return "¡Genial! Para terminar, bríndame en un solo mensaje tu *Nombre Completo, DNI y la dirección exacta de la agencia Shalom* donde recogerás tu pedido. ✍️"
         else:
             session['state'] = 'awaiting_shalom_agency_knowledge'
             save_session(user_id, session)
@@ -276,14 +308,17 @@ def handle_sales_flow(user_id, user_name, user_message, session):
                 "Como ves, es muy fácil. ¿Conoces la ubicación de alguna agencia Shalom donde podrías recoger tu pedido? (Sí/No)"
             )
             return explicacion_shalom
+
     elif current_state == 'awaiting_shalom_agency_knowledge':
         if 'si' in text or 'sí' in text:
             session['state'] = 'awaiting_shalom_details'
             save_session(user_id, session)
-            return "¡Genial! Bríndame en un solo mensaje tu Nombre Completo, DNI, Provincia y Distrito, y la dirección de la agencia Shalom.✍🏼"
+            return "¡Genial! Para terminar, bríndame en un solo mensaje tu *Nombre Completo, DNI y la dirección exacta de la agencia Shalom* donde recogerás tu pedido. ✍️"
         else:
+            # Caso B: Respuesta cuando el cliente no conoce una agencia Shalom
             delete_session(user_id)
-            return "Entiendo. Te recomendamos buscar tu agencia más cercana en la página de Shalom para una futura compra. ¡Gracias!"
+            return ("Entiendo, no te preocupes. ¡Qué lástima! 😔 Para poder *garantizar que recibas tu joya de forma segura*, necesitamos tener una dirección de agencia Shalom como punto de entrega.\n\n"
+                    "Por ahora no podremos continuar con el envío. De todas formas, ¡muchas gracias por tu interés en Daaqui Joyas! Esperamos tener *más opciones de delivery en el futuro*. ✨")
 
     elif current_state in ['awaiting_delivery_details', 'awaiting_shalom_details']:
         session['detalles_cliente'] = user_message
@@ -294,18 +329,19 @@ def handle_sales_flow(user_id, user_name, user_message, session):
         pregunta_final = "¿Confirmas que todo es correcto para proceder con el envío? (Sí/No)"
 
         if session.get('tipo_envio') == 'Contra Entrega':
-            lugar_de_envio_line = f"Lugar de Envío: {session.get('distrito', 'No especificado')}\n\n"
+            lugar_de_envio_line = f"Lugar de Envío: *{session.get('distrito', 'No especificado')}*\n\n"
         elif session.get('tipo_envio') == 'Shalom':
+            lugar_de_envio_line = f"Lugar de Envío: *{session.get('distrito', 'No especificado')}*\n\n"
             pregunta_final = "¿Confirmas estos datos para proceder con el adelanto? ✨ (Sí/No)"
 
         resumen = (
             "¡Perfecto, ya casi terminamos! ✅\n"
-            "Revisa que tus datos sean correctos:\n\n"
-            f"Pedido: 1x {session.get('producto_seleccionado', '')}\n"
-            f"Total: {session.get('precio_producto', '')}\n"
+            "Por favor, revisa que tus datos sean correctos:\n\n"
+            f"Pedido: 1x *{session.get('producto_seleccionado', '')}*\n"
+            f"Total: *{session.get('precio_producto', '')}*\n"
             f"{lugar_de_envio_line}"
-            f"Datos de Envío:\n{session.get('detalles_cliente', '')}\n\n"
-            f"{pregunta_final}"
+            f"Datos de Envío:\n_{session.get('detalles_cliente', '')}_\n\n"
+            f"*{pregunta_final}*"
         )
         return resumen
 
@@ -335,11 +371,11 @@ def handle_sales_flow(user_id, user_name, user_message, session):
                 save_session(user_id, session)
                 pago = INFO_NEGOCIO['datos_generales']['metodos_pago']
                 mensaje_pago = (
-                    "¡Gracias por confirmar! Para completar tu pedido, puedes realizar el adelanto de S/ 20.00 a cualquiera de estas cuentas:\n\n"
-                    f"- *YAPE:* {pago['yape_numero']}\n"
-                    f"- *PLIN:* {pago['plin_numero']}\n"
-                    f"- *Titular:* {pago['titular_nombre']}\n\n"
-                    "Una vez realizado, por favor, envíame una captura de pantalla o respóndeme con un 'listo' para agendar tu envío. 😊"
+                    "¡Gracias por confirmar! Para completar tu pedido, puedes realizar el adelanto de *S/ 20.00* a cualquiera de estas cuentas:\n\n"
+                    f"💳 *YAPE:* {pago['yape_numero']}\n"
+                    f"💳 *PLIN:* {pago['plin_numero']}\n"
+                    f"👤 *Titular:* {pago['titular_nombre']}\n\n"
+                    "Una vez realizado, por favor, envíame una *captura de pantalla* o respóndeme con un 'listo' para agendar tu envío. 😊"
                 )
                 return mensaje_pago
 
@@ -348,14 +384,12 @@ def handle_sales_flow(user_id, user_name, user_message, session):
             previous_state = 'awaiting_delivery_details' if tipo_envio == 'Contra Entrega' else 'awaiting_shalom_details'
             session['state'] = previous_state
             save_session(user_id, session)
-            return "Entendido. Para corregirlo, por favor, envíame *toda la información de envío de nuevo* en un solo mensaje."
+            # Caso E: Respuesta cuando el cliente quiere corregir sus datos
+            return "¡Entendido, lo corregimos! 😊 Para asegurar que tu joya llegue sin problemas, por favor envíame de nuevo los *datos de envío completos* en un solo mensaje. ✍️"
         else:
-            return "Por favor, responde con 'Sí' para confirmar o 'No' para corregir."
+            return "Por favor, responde con *'Sí'* para confirmar o *'No'* para corregir."
     
     elif current_state == 'awaiting_payment_proof':
-        if session.get('tipo_envio') == 'Shalom':
-             session['distrito'] = session.get('detalles_cliente', 'Provincia')
-             
         datos_del_pedido = { 'producto_seleccionado': session.get('producto_seleccionado'), 'precio_producto': session.get('precio_producto'), 'tipo_envio': session.get('tipo_envio'), 'distrito': session.get('distrito'), 'detalles_cliente': session.get('detalles_cliente'), 'whatsapp_id': user_id }
         guardado_exitoso = guardar_pedido_en_sheet(datos_del_pedido)
         if guardado_exitoso:
@@ -372,7 +406,6 @@ def handle_sales_flow(user_id, user_name, user_message, session):
         else:
             return "¡Uy! Tuvimos un problema al registrar tu pedido. Un asesor se pondrá en contacto contigo."
 
-
     return None
 
 # ==============================================================================
@@ -387,6 +420,7 @@ def webhook():
     elif request.method == 'POST':
         try:
             data = request.get_json()
+            logger.info(f"Webhook recibido: {json.dumps(data, indent=2)}") # Log completo para depuración
             if data.get('object') == 'whatsapp_business_account':
                 for entry in data.get('entry', []):
                     for change in entry.get('changes', []):
