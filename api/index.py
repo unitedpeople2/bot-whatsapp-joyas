@@ -9,10 +9,35 @@ from datetime import datetime, timedelta
 import re
 import json
 import gspread
+import firebase_admin
+from firebase_admin import credentials, firestore
 
 # Configuración del logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# ==========================================================
+# INICIALIZACIÓN DE FIREBASE (MEMORIA PERMANENTE)
+# ==========================================================
+try:
+    # Lee las credenciales desde la variable de entorno de Vercel
+    service_account_info_str = os.environ.get('FIREBASE_SERVICE_ACCOUNT_JSON')
+    if service_account_info_str:
+        service_account_info = json.loads(service_account_info_str)
+        cred = credentials.Certificate(service_account_info)
+        
+        # Evita la reinicialización en entornos de Vercel
+        if not firebase_admin._apps:
+            firebase_admin.initialize_app(cred)
+        
+        db = firestore.client()
+        logger.info("Firebase inicializado correctamente.")
+    else:
+        logger.error("La variable de entorno FIREBASE_SERVICE_ACCOUNT_JSON no está configurada.")
+        db = None
+except Exception as e:
+    logger.error(f"Error inicializando Firebase: {e}")
+    db = None
 
 app = Flask(__name__)
 
@@ -22,10 +47,6 @@ VERIFY_TOKEN = os.environ.get('WHATSAPP_VERIFY_TOKEN', 'JoyasBot2025!')
 PHONE_NUMBER_ID = os.environ.get('WHATSAPP_PHONE_NUMBER_ID', '')
 ADMIN_WHATSAPP_NUMBER = os.environ.get('ADMIN_WHATSAPP_NUMBER') 
 WHATSAPP_API_URL = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages" if PHONE_NUMBER_ID else None
-
-# Diccionario para guardar el estado de la conversación
-user_sessions = {}
-
 
 # ==============================================================================
 # 2. ÁREA DE CONFIGURACIÓN DEL NEGOCIO
@@ -62,23 +83,40 @@ INFO_NEGOCIO = {
         }
     }
 }
-TODOS_LOS_DISTRITOS_LIMA = [
-    "ancón", "ate", "barranco", "breña", "carabayllo", "chaclacayo", "chorrillos", 
-    "cieneguilla", "comas", "el agustino", "independencia", "jesús maría", "la molina", 
-    "la victoria", "lince", "los olivos", "lurigancho-chosica", "lurín", "magdalena del mar", 
-    "miraflores", "pachacámac", "pucusana", "pueblo libre", "puente piedra", "punta hermosa", 
-    "punta negra", "rímac", "san bartolo", "san borja", "san isidro", "san juan de lurigancho", 
-    "san juan de miraflores", "san luis", "san martín de porres", "san miguel", "santa anita", 
-    "santa maría del mar", "santa rosa", "santiago de surco", "surquillo", "villa el salvador", 
-    "villa maría del triunfo", "cercado de lima",
-    "bellavista", "carmen de la legua", "la perla", "la punta", "ventanilla", "callao"
-]
+TODOS_LOS_DISTRITOS_LIMA = [ "ancón", "ate", "barranco", "breña", "carabayllo", "chaclacayo", "chorrillos", "cieneguilla", "comas", "el agustino", "independencia", "jesús maría", "la molina", "la victoria", "lince", "los olivos", "lurigancho-chosica", "lurín", "magdalena del mar", "miraflores", "pachacámac", "pucusana", "pueblo libre", "puente piedra", "punta hermosa", "punta negra", "rímac", "san bartolo", "san borja", "san isidro", "san juan de lurigancho", "san juan de miraflores", "san luis", "san martín de porres", "san miguel", "santa anita", "santa maría del mar", "santa rosa", "santiago de surco", "surquillo", "villa el salvador", "villa maría del triunfo", "cercado de lima", "bellavista", "carmen de la legua", "la perla", "la punta", "ventanilla", "callao" ]
 COBERTURA_DELIVERY_LIMA = [ "ate", "barranco", "bellavista", "breña", "callao", "carabayllo", "carmen de la legua", "cercado de lima", "chorrillos", "comas", "el agustino", "independencia", "jesus maria", "la molina", "la perla", "la punta", "la victoria", "lince", "los olivos", "magdalena", "miraflores", "pueblo libre", "puente piedra", "rimac", "san borja", "san isidro", "san juan de lurigancho", "san juan de miraflores", "san luis", "san martin de porres", "san miguel", "santa anita", "surco", "surquillo", "villa el salvador", "villa maria del triunfo" ]
 ABREVIATURAS_DISTRITOS = { "sjl": "san juan de lurigancho", "sjm": "san juan de miraflores", "smp": "san martin de porres", "vmt": "villa maria del triunfo", "ves": "villa el salvador", "lima centro": "cercado de lima" }
 PALABRAS_CANCELACION = ["cancelar", "cancelo", "ya no quiero", "ya no", "mejor no", "detener", "no gracias"]
 
 # ==============================================================================
-# 3. FUNCIONES DE GOOGLE SHEETS
+# 3. FUNCIONES DE MANEJO DE SESIÓN CON FIRESTORE
+# ==============================================================================
+def get_session(user_id):
+    if not db: return None
+    try:
+        doc_ref = db.collection('sessions').document(user_id)
+        doc = doc_ref.get()
+        return doc.to_dict() if doc.exists else None
+    except Exception as e:
+        logger.error(f"Error obteniendo sesión para {user_id}: {e}")
+        return None
+
+def save_session(user_id, session_data):
+    if not db: return
+    try:
+        db.collection('sessions').document(user_id).set(session_data)
+    except Exception as e:
+        logger.error(f"Error guardando sesión para {user_id}: {e}")
+
+def delete_session(user_id):
+    if not db: return
+    try:
+        db.collection('sessions').document(user_id).delete()
+    except Exception as e:
+        logger.error(f"Error eliminando sesión para {user_id}: {e}")
+
+# ==============================================================================
+# 4. FUNCIONES AUXILIARES Y DE LÓGICA
 # ==============================================================================
 def guardar_pedido_en_sheet(datos_pedido):
     try:
@@ -107,10 +145,6 @@ def guardar_pedido_en_sheet(datos_pedido):
     except Exception as e:
         logger.error(f"[Sheets] ERROR INESPERADO: {e}")
         return False
-
-# ==============================================================================
-# 4. FUNCIONES DE LÓGICA DEL BOT
-# ==============================================================================
 
 def obtener_dia_entrega():
     hoy = datetime.now()
@@ -159,15 +193,17 @@ def generate_response(text, name, from_number):
         return (f"¡Hola {name}! 👋✨ Soy tu asesora virtual de Daaqui Joyas.\n\n" f"Tenemos en stock estas joyas mágicas con envío gratis:\n\n{texto_productos}\n\n" f"Escribe el número o el nombre del producto que te gustaría conocer.")
     return f"¡Hola {name}! 👋 No entendí tu consulta. Puedes preguntar sobre nuestros productos, 'envío' o 'pagos'."
 
-def handle_sales_flow(user_id, user_name, user_message):
-    session = user_sessions[user_id]
+# ==============================================================================
+# 5. LÓGICA DE VENTA - AHORA USANDO FIRESTORE
+# ==============================================================================
+def handle_sales_flow(user_id, user_name, user_message, session):
     current_state = session.get('state')
     text = user_message.lower().strip()
     
     logger.info(f"[DEBUG] User: {user_id}, State: {current_state}, Message: {text}")
 
     if any(palabra in text for palabra in PALABRAS_CANCELACION):
-        if user_id in user_sessions: del user_sessions[user_id]
+        delete_session(user_id)
         return "Entendido, he cancelado el proceso. Si cambias de opinión o necesitas algo más, no dudes en escribirme. ¡Que tengas un buen día! 😊"
     
     if current_state == 'awaiting_product_selection':
@@ -176,28 +212,27 @@ def handle_sales_flow(user_id, user_name, user_message):
             session['state'] = 'awaiting_location'
             session['producto_seleccionado'] = producto_info['nombre_completo']
             session['precio_producto'] = producto_info['precio']
+            save_session(user_id, session)
             return f"¡Confirmado: {producto_info['nombre_completo']}! Para continuar, por favor, dime: ¿eres de Lima o de provincia?"
         return "No pude identificar el producto. Por favor, intenta con el número o nombre exacto."
     elif current_state == 'awaiting_location':
         distrito_lima = es_distrito_de_lima(text)
         if distrito_lima:
             if distrito_lima.lower() in COBERTURA_DELIVERY_LIMA:
-                session['state'] = 'awaiting_delivery_details'
-                session['distrito'] = distrito_lima
-                session['tipo_envio'] = 'Contra Entrega'
+                session.update({'state': 'awaiting_delivery_details', 'distrito': distrito_lima, 'tipo_envio': 'Contra Entrega'})
+                save_session(user_id, session)
                 return f"¡Excelente! 🏙️ Tenemos cobertura en {distrito_lima}.\nPara completar tu pedido, necesito que me brindes en un solo mensaje: Nombre Completo, Dirección exacta y Referencia del domicilio. ✍🏼"
             else:
-                session['state'] = 'awaiting_shalom_agreement'
-                session['distrito'] = distrito_lima
-                session['tipo_envio'] = 'Shalom'
+                session.update({'state': 'awaiting_shalom_agreement', 'distrito': distrito_lima, 'tipo_envio': 'Shalom'})
+                save_session(user_id, session)
                 return (f"Entendido. Para {distrito_lima}, los envíos son por Shalom y requieren un adelanto de {INFO_NEGOCIO['politicas_envio']['envio_shalom']['adelanto_requerido']}. " "¿Estás de acuerdo? (Sí/No)")
         elif 'lima' in text:
             session['state'] = 'awaiting_lima_district'
+            save_session(user_id, session)
             return "¡Genial! Para saber qué tipo de envío te corresponde, por favor, indícame tu distrito."
         elif 'provincia' in text:
-            session['state'] = 'awaiting_shalom_agreement'
-            session['distrito'] = 'Provincia'
-            session['tipo_envio'] = 'Shalom'
+            session.update({'state': 'awaiting_shalom_agreement', 'distrito': 'Provincia', 'tipo_envio': 'Shalom'})
+            save_session(user_id, session)
             return (f"Entendido. Para provincia, los envíos son por agencia Shalom y requieren un adelanto de {INFO_NEGOCIO['politicas_envio']['envio_shalom']['adelanto_requerido']}. "
                     "¿Estás de acuerdo? (Sí/No)")
         else:
@@ -205,29 +240,30 @@ def handle_sales_flow(user_id, user_name, user_message):
     elif current_state == 'awaiting_lima_district':
         distrito_cobertura = verificar_cobertura(text)
         if distrito_cobertura:
-            session['state'] = 'awaiting_delivery_details'
-            session['distrito'] = distrito_cobertura
-            session['tipo_envio'] = 'Contra Entrega'
+            session.update({'state': 'awaiting_delivery_details', 'distrito': distrito_cobertura, 'tipo_envio': 'Contra Entrega'})
+            save_session(user_id, session)
             return f"¡Excelente! 🏙️ Tenemos cobertura en {distrito_cobertura}.\nPara completar tu pedido, necesito que me brindes en un solo mensaje: Nombre Completo, Dirección exacta y Referencia del domicilio. ✍🏼"
         else:
             distrito_sin_cobertura = user_message.title()
-            session['state'] = 'awaiting_shalom_agreement'
-            session['distrito'] = distrito_sin_cobertura
-            session['tipo_envio'] = 'Shalom'
+            session.update({'state': 'awaiting_shalom_agreement', 'distrito': distrito_sin_cobertura, 'tipo_envio': 'Shalom'})
+            save_session(user_id, session)
             return (f"Entendido. Para {distrito_sin_cobertura}, los envíos son por Shalom y requieren un adelanto de {INFO_NEGOCIO['politicas_envio']['envio_shalom']['adelanto_requerido']}. " "¿Estás de acuerdo? (Sí/No)")
     elif current_state == 'awaiting_shalom_agreement':
         if 'si' in text or 'sí' in text or 'de acuerdo' in text:
             session['state'] = 'awaiting_shalom_experience'
+            save_session(user_id, session)
             return "¿Alguna vez has recogido un pedido en una agencia Shalom? (Sí/No)"
         else:
-            if user_id in user_sessions: del user_sessions[user_id]
+            delete_session(user_id)
             return "Entiendo. Si cambias de opinión, aquí estaremos. ¡Gracias!"
     elif current_state == 'awaiting_shalom_experience':
         if 'si' in text or 'sí' in text:
             session['state'] = 'awaiting_shalom_details'
+            save_session(user_id, session)
             return "¡Perfecto! Bríndame en un solo mensaje tu Nombre Completo, DNI, Provincia y Distrito, y la dirección de la agencia Shalom donde recoges.✍🏼"
         else:
             session['state'] = 'awaiting_shalom_agency_knowledge'
+            save_session(user_id, session)
             explicacion_shalom = (
                 "¡No te preocupes! Te explico rápidamente cómo funciona:\n\n"
                 "🏪 *Shalom* es una empresa de envíos muy confiable.\n"
@@ -240,14 +276,16 @@ def handle_sales_flow(user_id, user_name, user_message):
     elif current_state == 'awaiting_shalom_agency_knowledge':
         if 'si' in text or 'sí' in text:
             session['state'] = 'awaiting_shalom_details'
+            save_session(user_id, session)
             return "¡Genial! Bríndame en un solo mensaje tu Nombre Completo, DNI, Provincia y Distrito, y la dirección de la agencia Shalom.✍🏼"
         else:
-            if user_id in user_sessions: del user_sessions[user_id]
+            delete_session(user_id)
             return "Entiendo. Te recomendamos buscar tu agencia más cercana en la página de Shalom para una futura compra. ¡Gracias!"
 
     elif current_state in ['awaiting_delivery_details', 'awaiting_shalom_details']:
         session['detalles_cliente'] = user_message
         session['state'] = 'awaiting_final_confirmation'
+        save_session(user_id, session)
         
         lugar_de_envio_line = ""
         pregunta_final = "¿Confirmas que todo es correcto para proceder con el envío? (Sí/No)"
@@ -278,7 +316,7 @@ def handle_sales_flow(user_id, user_name, user_message):
                         mensaje_notificacion = (f"🎉 ¡Nueva Venta Registrada! 🎉\n\n" f"Producto: {datos_del_pedido.get('producto_seleccionado')}\n" f"Precio: {datos_del_pedido.get('precio_producto')}\n" f"Tipo de Envío: {datos_del_pedido.get('tipo_envio')}\n" f"Distrito/Prov: {datos_del_pedido.get('distrito')}\n" f"Cliente WA ID: {datos_del_pedido.get('whatsapp_id')}\n\n" f"Detalles:\n{datos_del_pedido.get('detalles_cliente')}")
                         send_whatsapp_message(ADMIN_WHATSAPP_NUMBER, {"type": "text", "text": {"body": mensaje_notificacion}})
                     
-                    if user_id in user_sessions: del user_sessions[user_id]
+                    delete_session(user_id)
                     dia_entrega = obtener_dia_entrega()
                     mensaje_final_lima = (
                         "¡Tu pedido ha sido confirmado! 🎉 ¡Gracias por tu compra en Daaqui!\n\n"
@@ -291,6 +329,7 @@ def handle_sales_flow(user_id, user_name, user_message):
             
             elif session.get('tipo_envio') == 'Shalom':
                 session['state'] = 'awaiting_payment_proof'
+                save_session(user_id, session)
                 pago = INFO_NEGOCIO['datos_generales']['metodos_pago']
                 mensaje_pago = (
                     "¡Gracias por confirmar! Para completar tu pedido, puedes realizar el adelanto de S/ 20.00 a cualquiera de estas cuentas:\n\n"
@@ -305,6 +344,7 @@ def handle_sales_flow(user_id, user_name, user_message):
             tipo_envio = session.get('tipo_envio')
             previous_state = 'awaiting_delivery_details' if tipo_envio == 'Contra Entrega' else 'awaiting_shalom_details'
             session['state'] = previous_state
+            save_session(user_id, session)
             return "Entendido. Para corregirlo, por favor, envíame *toda la información de envío de nuevo* en un solo mensaje."
         else:
             return "Por favor, responde con 'Sí' para confirmar o 'No' para corregir."
@@ -320,7 +360,7 @@ def handle_sales_flow(user_id, user_name, user_message):
                 mensaje_notificacion = (f"🎉 ¡Nueva Venta Registrada! (Shalom) 🎉\n\n" f"Producto: {datos_del_pedido.get('producto_seleccionado')}\n" f"Cliente WA ID: {datos_del_pedido.get('whatsapp_id')}\n\n" "El cliente ha confirmado el pago. Revisa el chat para ver la captura y coordinar el envío.")
                 send_whatsapp_message(ADMIN_WHATSAPP_NUMBER, {"type": "text", "text": {"body": mensaje_notificacion}})
             
-            if user_id in user_sessions: del user_sessions[user_id]
+            delete_session(user_id)
             mensaje_final_shalom = (
                 "¡Pago confirmado! ✨ Hemos agendado tu pedido.\n\n"
                 "En las próximas 24 horas hábiles, te enviaremos por aquí tu *código de seguimiento* de Shalom. ¡Gracias por tu compra en Daaqui Joyas!"
@@ -333,7 +373,7 @@ def handle_sales_flow(user_id, user_name, user_message):
     return None
 
 # ==============================================================================
-# 5. FUNCIONES INTERNAS DEL BOT
+# 6. FUNCIONES INTERNAS DEL BOT (WEBHOOK, ETC.)
 # ==============================================================================
 @app.route('/api/webhook', methods=['GET', 'POST'])
 def webhook():
@@ -368,19 +408,21 @@ def process_message(message, contacts):
         response_text = None
         text_lower = text_body.lower()
         
-        if from_number not in user_sessions:
+        session = get_session(from_number)
+        
+        if not session:
             if any(palabra in text_lower for palabra in ['comprar', 'pedido', 'coordinar', 'quiero uno']):
-                user_sessions[from_number] = {'state': 'awaiting_product_selection'}
-                response_text = handle_sales_flow(from_number, contact_name, text_body)
+                new_session = {'state': 'awaiting_product_selection'}
+                save_session(from_number, new_session)
+                response_text = handle_sales_flow(from_number, contact_name, text_body, new_session)
             else:
                 response_text = generate_response(text_body, contact_name, from_number)
-        else: 
-            session = user_sessions[from_number]
+        else:
             current_state = session.get('state')
             if current_state == 'awaiting_payment_proof' and (message_type == 'image' or 'listo' in text_lower):
-                response_text = handle_sales_flow(from_number, contact_name, "COMPROBANTE_RECIBIDO")
+                response_text = handle_sales_flow(from_number, contact_name, "COMPROBANTE_RECIBIDO", session)
             elif message_type == 'text':
-                response_text = handle_sales_flow(from_number, contact_name, text_body)
+                response_text = handle_sales_flow(from_number, contact_name, text_body, session)
 
         if response_text: 
             send_whatsapp_message(from_number, {"type": "text", "text": {"body": response_text}})
@@ -389,6 +431,8 @@ def process_message(message, contacts):
         logger.error(f"Error en process_message: {e}")
 
 def send_whatsapp_message(to_number, message_data):
+    WHATSAPP_TOKEN = os.environ.get('WHATSAPP_ACCESS_TOKEN')
+    WHATSAPP_API_URL = f"https://graph.facebook.com/v21.0/{os.environ.get('WHATSAPP_PHONE_NUMBER_ID')}/messages"
     if not WHATSAPP_TOKEN or not WHATSAPP_API_URL:
         logger.error("Token de WhatsApp o URL de API no configurados.")
         return
@@ -407,4 +451,14 @@ def home():
 
 if __name__ == '__main__':
     app.run(debug=True)
+```
+
+### Paso 3: Comandos para Actualizar en GitHub
+
+Finalmente, aquí tienes los comandos para desplegar esta solución definitiva.
+
+```bash
+git add .
+git commit -m "Refactor: Integra Firestore para memoria persistente y estabilidad"
+git push
 
