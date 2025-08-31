@@ -113,15 +113,13 @@ def guardar_pedido_en_sheet(datos_pedido):
 # 4. FUNCIONES DE LÓGICA DEL BOT
 # ==============================================================================
 
-# NUEVO: Función para determinar el día de entrega
 def obtener_dia_entrega():
     hoy = datetime.now()
-    # weekday() -> Lunes=0, Martes=1, ..., Sábado=5, Domingo=6
-    if hoy.weekday() < 4: # Lunes a Jueves
+    if hoy.weekday() < 4: 
         return "mañana"
-    elif hoy.weekday() == 4: # Viernes
+    elif hoy.weekday() == 4:
         return "mañana (Sábado)"
-    else: # Sábado y Domingo
+    else:
         return "el Lunes"
 
 def verificar_cobertura(texto_usuario):
@@ -142,7 +140,6 @@ def es_distrito_de_lima(texto_usuario):
     return None
 
 def buscar_producto(texto_usuario, return_key=False):
-    # ... (código sin cambios)
     texto = texto_usuario.lower()
     for key, producto_info in INFO_NEGOCIO["productos"].items():
         for palabra in producto_info["palabras_clave"]:
@@ -151,7 +148,6 @@ def buscar_producto(texto_usuario, return_key=False):
     return (None, None) if return_key else None
 
 def generate_response(text, name, from_number):
-    # ... (código sin cambios)
     text = text.lower()
     distrito_encontrado = verificar_cobertura(text)
     if distrito_encontrado: return f"¡Buenas noticias, {name}! Sí tenemos cobertura de delivery contra entrega en {distrito_encontrado}. 🎉 Puedes iniciar tu pedido escribiendo 'comprar'."
@@ -169,12 +165,10 @@ def handle_sales_flow(user_id, user_name, user_message):
     current_state = session.get('state')
     text = user_message.lower().strip()
     
-    # ... (lógica de cancelación y preguntas sin cambios)
     if any(palabra in text for palabra in PALABRAS_CANCELACION):
         if user_id in user_sessions: del user_sessions[user_id]
         return "Entendido, he cancelado el proceso. Si cambias de opinión o necesitas algo más, no dudes en escribirme. ¡Que tengas un buen día! 😊"
     
-    # ... (código sin cambios hasta el final)
     if current_state == 'awaiting_product_selection':
         producto_key, producto_info = buscar_producto(text, return_key=True)
         if producto_info:
@@ -247,7 +241,6 @@ def handle_sales_flow(user_id, user_name, user_message):
 
         if session.get('tipo_envio') == 'Contra Entrega':
             lugar_de_envio_line = f"Lugar de Envío: {session.get('distrito', 'No especificado')}\n\n"
-        # MEJORADO: Se cambia la pregunta de confirmación para Shalom
         elif session.get('tipo_envio') == 'Shalom':
             pregunta_final = "¿Confirmas estos datos para proceder con el adelanto? ✨ (Sí/No)"
 
@@ -264,18 +257,15 @@ def handle_sales_flow(user_id, user_name, user_message):
 
     elif current_state == 'awaiting_final_confirmation':
         if 'si' in text or 'sí' in text or 'correcto' in text:
-            # MEJORADO: La lógica se divide. Para Contra Entrega se cierra la venta. Para Shalom, se piden los datos de pago.
             if session.get('tipo_envio') == 'Contra Entrega':
                 datos_del_pedido = { 'producto_seleccionado': session.get('producto_seleccionado'), 'precio_producto': session.get('precio_producto'), 'tipo_envio': session.get('tipo_envio'), 'distrito': session.get('distrito'), 'detalles_cliente': session.get('detalles_cliente'), 'whatsapp_id': user_id }
                 guardado_exitoso = guardar_pedido_en_sheet(datos_del_pedido)
                 if guardado_exitoso:
                     if ADMIN_WHATSAPP_NUMBER:
-                        # ... (código de notificación sin cambios)
                         mensaje_notificacion = (f"🎉 ¡Nueva Venta Registrada! 🎉\n\n" f"Producto: {datos_del_pedido.get('producto_seleccionado')}\n" f"Precio: {datos_del_pedido.get('precio_producto')}\n" f"Tipo de Envío: {datos_del_pedido.get('tipo_envio')}\n" f"Distrito/Prov: {datos_del_pedido.get('distrito')}\n" f"Cliente WA ID: {datos_del_pedido.get('whatsapp_id')}\n\n" f"Detalles:\n{datos_del_pedido.get('detalles_cliente')}")
                         send_whatsapp_message(ADMIN_WHATSAPP_NUMBER, {"type": "text", "text": {"body": mensaje_notificacion}})
                     
                     if user_id in user_sessions: del user_sessions[user_id]
-                    # MEJORADO: Mensaje final con afirmación de compromiso y horario
                     dia_entrega = obtener_dia_entrega()
                     mensaje_final_lima = (
                         "¡Tu pedido ha sido confirmado! 🎉 ¡Gracias por tu compra en Daaqui!\n\n"
@@ -286,10 +276,10 @@ def handle_sales_flow(user_id, user_name, user_message):
                 else:
                     return "¡Uy! Tuvimos un problema al registrar tu pedido. Por favor, intenta confirmar nuevamente."
             
-            # NUEVO: Flujo de pago para Shalom
             elif session.get('tipo_envio') == 'Shalom':
                 session['state'] = 'awaiting_payment_proof'
-                pago = INFO_NEGOCIO['metodos_pago']
+                # CORREGIDO: Ruta correcta al diccionario de métodos de pago
+                pago = INFO_NEGOCIO['datos_generales']['metodos_pago']
                 mensaje_pago = (
                     "¡Gracias por confirmar! Para completar tu pedido, puedes realizar el adelanto de S/ 20.00 a cualquiera de estas cuentas:\n\n"
                     f"- *YAPE:* {pago['yape_numero']}\n"
@@ -300,7 +290,6 @@ def handle_sales_flow(user_id, user_name, user_message):
                 return mensaje_pago
 
         elif 'no' in text:
-            # ... (código de corrección sin cambios)
             tipo_envio = session.get('tipo_envio')
             previous_state = 'awaiting_delivery_details' if tipo_envio == 'Contra Entrega' else 'awaiting_shalom_details'
             session['state'] = previous_state
@@ -308,9 +297,7 @@ def handle_sales_flow(user_id, user_name, user_message):
         else:
             return "Por favor, responde con 'Sí' para confirmar o 'No' para corregir."
     
-    # NUEVO: Estado para esperar la confirmación del pago
     elif current_state == 'awaiting_payment_proof':
-        # Guardamos la provincia real para el sheet
         if session.get('tipo_envio') == 'Shalom':
              session['distrito'] = session.get('detalles_cliente', 'Provincia')
              
@@ -337,7 +324,6 @@ def handle_sales_flow(user_id, user_name, user_message):
 # 5. FUNCIONES INTERNAS DEL BOT
 # ==============================================================================
 @app.route('/api/webhook', methods=['GET', 'POST'])
-# ... (código sin cambios)
 def webhook():
     if request.method == 'GET':
         mode, token, challenge = request.args.get('hub.mode'), request.args.get('hub.verify_token'), request.args.get('hub.challenge')
@@ -372,7 +358,6 @@ def process_message(message, contacts):
         
         response_text = None
 
-        # MEJORADO: Permite recibir imágenes o texto en el paso de confirmación de pago
         if current_state == 'awaiting_payment_proof' and (message_type == 'image' or 'listo' in text_body.lower()):
             response_text = handle_sales_flow(from_number, contact_name, "COMPROBANTE_RECIBIDO")
         elif message_type == 'text':
@@ -393,7 +378,6 @@ def process_message(message, contacts):
         logger.error(f"Error en process_message: {e}")
 
 def send_whatsapp_message(to_number, message_data):
-    # ... (código sin cambios)
     if not WHATSAPP_TOKEN or not WHATSAPP_API_URL:
         logger.error("Token de WhatsApp o URL de API no configurados.")
         return
