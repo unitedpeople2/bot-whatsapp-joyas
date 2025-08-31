@@ -20,7 +20,6 @@ app = Flask(__name__)
 WHATSAPP_TOKEN = os.environ.get('WHATSAPP_ACCESS_TOKEN')
 VERIFY_TOKEN = os.environ.get('WHATSAPP_VERIFY_TOKEN', 'JoyasBot2025!')
 PHONE_NUMBER_ID = os.environ.get('WHATSAPP_PHONE_NUMBER_ID', '')
-# NUEVO: Variable para el número del administrador que recibirá las notificaciones
 ADMIN_WHATSAPP_NUMBER = os.environ.get('ADMIN_WHATSAPP_NUMBER') 
 WHATSAPP_API_URL = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages" if PHONE_NUMBER_ID else None
 
@@ -56,6 +55,20 @@ INFO_NEGOCIO = {
         "tienda_fisica": "No contamos con tienda física. Somos una tienda 100% online.", "garantia": "Ofrecemos una garantía de 15 días por cualquier defecto de fábrica.", "material_joyas": "Todas nuestras joyas son de acero inoxidable quirúrgico.", "medida_cadena": "El largo estándar de nuestras cadenas es de 45 cm.", "empaque": "¡Sí! Todas tus compras incluyen una hermosa cajita de regalo 🎁.", "metodos_pago": { "contra_entrega": "Para delivery en Lima puedes pagar con Efectivo, Yape o Plin al recibir tu pedido.", "adelanto_shalom": "El adelanto para envíos por Shalom puedes realizarlo por Yape, Plin o Transferencia."}
     }
 }
+# CORREGIDO: Añadimos una lista de todos los distritos de Lima para una mejor validación
+TODOS_LOS_DISTRITOS_LIMA = [
+    "ancón", "ate", "barranco", "breña", "carabayllo", "chaclacayo", "chorrillos", 
+    "cieneguilla", "comas", "el agustino", "independencia", "jesús maría", "la molina", 
+    "la victoria", "lince", "los olivos", "lurigancho-chosica", "lurín", "magdalena del mar", 
+    "miraflores", "pachacámac", "pucusana", "pueblo libre", "puente piedra", "punta hermosa", 
+    "punta negra", "rímac", "san bartolo", "san borja", "san isidro", "san juan de lurigancho", 
+    "san juan de miraflores", "san luis", "san martín de porres", "san miguel", "santa anita", 
+    "santa maría del mar", "santa rosa", "santiago de surco", "surquillo", "villa el salvador", 
+    "villa maría del triunfo", "cercado de lima",
+    # Callao
+    "bellavista", "carmen de la legua", "la perla", "la punta", "ventanilla", "callao"
+]
+
 COBERTURA_DELIVERY_LIMA = [ "ate", "barranco", "bellavista", "breña", "callao", "carabayllo", "carmen de la legua", "cercado de lima", "chorrillos", "comas", "el agustino", "independencia", "jesus maria", "la molina", "la perla", "la punta", "la victoria", "lince", "los olivos", "magdalena", "miraflores", "pueblo libre", "puente piedra", "rimac", "san borja", "san isidro", "san juan de lurigancho", "san juan de miraflores", "san luis", "san martin de porres", "san miguel", "santa anita", "surco", "surquillo", "villa el salvador", "villa maria del triunfo" ]
 ABREVIATURAS_DISTRITOS = { "sjl": "san juan de lurigancho", "sjm": "san juan de miraflores", "smp": "san martin de porres", "vmt": "villa maria del triunfo", "ves": "villa el salvador", "lima centro": "cercado de lima" }
 
@@ -111,6 +124,14 @@ def verificar_cobertura(texto_usuario):
             return nombre_completo.title()
     return None
 
+# NUEVO: Función para detectar cualquier distrito de Lima
+def es_distrito_de_lima(texto_usuario):
+    texto = texto_usuario.lower().strip().replace('.', '').replace(',', '')
+    for distrito in TODOS_LOS_DISTRITOS_LIMA:
+        if re.search(r'\b' + re.escape(distrito) + r'\b', texto):
+            return distrito.title()
+    return None
+
 def buscar_producto(texto_usuario, return_key=False):
     texto = texto_usuario.lower()
     for key, producto_info in INFO_NEGOCIO["productos"].items():
@@ -140,7 +161,7 @@ def generate_response(text, name, from_number):
 def handle_sales_flow(user_id, user_name, user_message):
     session = user_sessions.get(user_id, {})
     current_state = session.get('state')
-    text = user_message.lower()
+    text = user_message.lower().strip() # Limpiamos espacios
 
     if any(palabra in text for palabra in PALABRAS_CANCELACION):
         del user_sessions[user_id]
@@ -168,8 +189,20 @@ def handle_sales_flow(user_id, user_name, user_message):
             return f"¡Confirmado: {producto_info['nombre_completo']}! Para continuar, por favor, dime: ¿eres de Lima o de provincia?"
         return "No pude identificar el producto. Por favor, intenta con el número o nombre exacto."
 
+    # MEJORADO: Lógica mucho más robusta
     elif current_state == 'awaiting_location':
-        if 'lima' in text:
+        distrito_lima = es_distrito_de_lima(text)
+        if distrito_lima:
+            # Si es un distrito de Lima, verificamos si tiene cobertura
+            if distrito_lima.lower() in COBERTURA_DELIVERY_LIMA:
+                session.update({'state': 'awaiting_delivery_details', 'distrito': distrito_lima, 'tipo_envio': 'Contra Entrega'})
+                return f"¡Excelente! 🏙️ Tenemos cobertura en {distrito_lima}.\nPara completar tu pedido, necesito que me brindes en un solo mensaje: Nombre Completo, Dirección exacta y Referencia del domicilio. ✍🏼"
+            else:
+                # Si es de Lima pero sin cobertura, va al flujo Shalom
+                session.update({'state': 'awaiting_shalom_agreement', 'distrito': distrito_lima, 'tipo_envio': 'Shalom'})
+                return (f"Entendido. Para {distrito_lima}, los envíos son por Shalom y requieren un adelanto de {INFO_NEGOCIO['politicas_envio']['envio_shalom']['adelanto_requerido']}. "
+                        "¿Estás de acuerdo? (Sí/No)")
+        elif 'lima' in text:
             session['state'] = 'awaiting_lima_district'
             return "¡Genial! Para saber qué tipo de envío te corresponde, por favor, indícame tu distrito."
         elif 'provincia' in text:
@@ -177,7 +210,7 @@ def handle_sales_flow(user_id, user_name, user_message):
             return (f"Entendido. Para provincia, los envíos son por agencia Shalom y requieren un adelanto de {INFO_NEGOCIO['politicas_envio']['envio_shalom']['adelanto_requerido']}. "
                     "¿Estás de acuerdo? (Sí/No)")
         else:
-            return "¿Eres de Lima o de provincia?"
+            return "¿Eres de Lima o de provincia? Por favor, responde con una de esas dos opciones."
 
     elif current_state == 'awaiting_lima_district':
         distrito_cobertura = verificar_cobertura(text)
@@ -185,8 +218,10 @@ def handle_sales_flow(user_id, user_name, user_message):
             session.update({'state': 'awaiting_delivery_details', 'distrito': distrito_cobertura, 'tipo_envio': 'Contra Entrega'})
             return f"¡Excelente! 🏙️ Tenemos cobertura en {distrito_cobertura}.\nPara completar tu pedido, necesito que me brindes en un solo mensaje: Nombre Completo, Dirección exacta y Referencia del domicilio. ✍🏼"
         else:
-            session.update({'state': 'awaiting_shalom_agreement', 'distrito': user_message.title(), 'tipo_envio': 'Shalom'})
-            return (f"Entendido. Para {user_message.title()}, los envíos son por Shalom y requieren un adelanto de {INFO_NEGOCIO['politicas_envio']['envio_shalom']['adelanto_requerido']}. "
+            # CORREGIDO: Usamos el texto original del usuario si no hay cobertura
+            distrito_sin_cobertura = user_message.title()
+            session.update({'state': 'awaiting_shalom_agreement', 'distrito': distrito_sin_cobertura, 'tipo_envio': 'Shalom'})
+            return (f"Entendido. Para {distrito_sin_cobertura}, los envíos son por Shalom y requieren un adelanto de {INFO_NEGOCIO['politicas_envio']['envio_shalom']['adelanto_requerido']}. "
                     "¿Estás de acuerdo? (Sí/No)")
 
     elif current_state == 'awaiting_shalom_agreement':
@@ -196,15 +231,17 @@ def handle_sales_flow(user_id, user_name, user_message):
         else:
             del user_sessions[user_id]
             return "Entiendo. Si cambias de opinión, aquí estaremos. ¡Gracias!"
-
+    
     elif current_state == 'awaiting_shalom_experience':
         if 'si' in text or 'sí' in text:
             session['state'] = 'awaiting_shalom_details'
             return "¡Perfecto! Bríndame en un solo mensaje tu Nombre Completo, DNI y la dirección de la agencia Shalom donde recoges.✍🏼"
         else:
             session['state'] = 'awaiting_shalom_agency_knowledge'
-            return ("No te preocupes. El paquete se envía a la agencia Shalom que elijas y te avisamos cuando llegue para que lo recojas. "
-                    "¿Está claro y conoces una agencia cercana? (Sí/No)")
+            return ("¡No te preocupes! Te explico rápidamente cómo funciona: 🏪 **Shalom** es una empresa de envíos muy confiable. "
+                    "🆔 Solo necesitas tu **DNI** para recoger tu paquete. 🔑 Te daremos un **código de seguridad** para que puedas recoger tu pedido. "
+                    "🔒 Es un método **súper seguro y rápido**.\n\n"
+                    "Como ves, es muy fácil. **¿Conoces la ubicación de alguna agencia Shalom donde podrías recoger tu pedido?** (Sí/No)")
 
     elif current_state == 'awaiting_shalom_agency_knowledge':
         if 'si' in text or 'sí' in text:
@@ -221,7 +258,8 @@ def handle_sales_flow(user_id, user_name, user_message):
             "¡Perfecto, ya casi terminamos! ✅\n"
             "Revisa que tus datos sean correctos:\n\n"
             f"Pedido: 1x {session.get('producto_seleccionado', '')}\n"
-            f"Total: {session.get('precio_producto', '')}\n\n"
+            f"Total: {session.get('precio_producto', '')}\n"
+            f"Lugar de Envío: {session.get('distrito', '')}\n\n"
             f"Datos de Envío:\n{session.get('detalles_cliente', '')}\n\n"
             "¿Confirmas que todo es correcto? (Sí/No)"
         )
@@ -239,7 +277,6 @@ def handle_sales_flow(user_id, user_name, user_message):
             }
             guardado_exitoso = guardar_pedido_en_sheet(datos_del_pedido)
             if guardado_exitoso:
-                # NUEVO: Enviar notificación de venta al administrador
                 if ADMIN_WHATSAPP_NUMBER:
                     mensaje_notificacion = (
                         f"🎉 ¡Nueva Venta Registrada! 🎉\n\n"
@@ -258,8 +295,11 @@ def handle_sales_flow(user_id, user_name, user_message):
                 return "¡Uy! Tuvimos un problema al registrar tu pedido. Por favor, intenta confirmar nuevamente."
         
         elif 'no' in text:
-            previous_state = 'awaiting_delivery_details' if session.get('tipo_envio') == 'Contra Entrega' else 'awaiting_shalom_details'
-            session['state'] = previous_state
+            tipo_envio = session.get('tipo_envio')
+            if tipo_envio == 'Contra Entrega':
+                session['state'] = 'awaiting_delivery_details'
+            else:
+                session['state'] = 'awaiting_shalom_details'
             return "Entendido. Para corregirlo, por favor, envíame **toda la información de envío de nuevo** en un solo mensaje."
         
         else:
