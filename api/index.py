@@ -174,11 +174,24 @@ def handle_sales_flow(user_id, user_name, user_message):
         elif 'lima' in text:
             session['state'] = 'awaiting_lima_district'
             return "¡Genial! Para saber qué tipo de envío te corresponde, por favor, indícame tu distrito."
+        # MEJORADO: Se añade el nuevo paso para preguntar la provincia
         elif 'provincia' in text:
-            session.update({'state': 'awaiting_shalom_agreement', 'distrito': 'Provincia'})
-            return (f"Entendido. Para provincia, los envíos son por agencia Shalom y requieren un adelanto de {INFO_NEGOCIO['politicas_envio']['envio_shalom']['adelanto_requerido']}. " "¿Estás de acuerdo? (Sí/No)")
+            session['state'] = 'awaiting_province_name'
+            return "¡Genial! Hacemos envios a todo el Peru solo por Shalom, por favor, indícame tu provincia."
         else:
             return "¿Eres de Lima o de provincia? Por favor, responde con una de esas dos opciones."
+    
+    # NUEVO: Estado para manejar la respuesta de la provincia
+    elif current_state == 'awaiting_province_name':
+        provincia_cliente = user_message.title()
+        session.update({
+            'state': 'awaiting_shalom_agreement', 
+            'distrito': provincia_cliente, # Usamos 'distrito' para guardar la ubicación
+            'tipo_envio': 'Shalom'
+        })
+        return (f"Entendido. Para {provincia_cliente}, los envíos son por agencia Shalom y requieren un adelanto de {INFO_NEGOCIO['politicas_envio']['envio_shalom']['adelanto_requerido']}. "
+                "¿Estás de acuerdo? (Sí/No)")
+
     elif current_state == 'awaiting_lima_district':
         distrito_cobertura = verificar_cobertura(text)
         if distrito_cobertura:
@@ -195,14 +208,12 @@ def handle_sales_flow(user_id, user_name, user_message):
         else:
             del user_sessions[user_id]
             return "Entiendo. Si cambias de opinión, aquí estaremos. ¡Gracias!"
-    # MEJORADO: Lógica y texto de explicación sobre Shalom
     elif current_state == 'awaiting_shalom_experience':
         if 'si' in text or 'sí' in text:
             session['state'] = 'awaiting_shalom_details'
             return "¡Perfecto! Bríndame en un solo mensaje tu Nombre Completo, DNI y la dirección de la agencia Shalom donde recoges.✍🏼"
         else:
             session['state'] = 'awaiting_shalom_agency_knowledge'
-            # MEJORADO: Se usa el formato de lista y negrita simple
             explicacion_shalom = (
                 "¡No te preocupes! Te explico rápidamente cómo funciona:\n\n"
                 "🏪 *Shalom* es una empresa de envíos muy confiable.\n"
@@ -222,7 +233,6 @@ def handle_sales_flow(user_id, user_name, user_message):
     elif current_state in ['awaiting_delivery_details', 'awaiting_shalom_details']:
         session['detalles_cliente'] = user_message 
         session['state'] = 'awaiting_final_confirmation'
-        # MEJORADO: Se asegura que el distrito siempre esté en el resumen
         resumen = (
             "¡Perfecto, ya casi terminamos! ✅\n"
             "Revisa que tus datos sean correctos:\n\n"
@@ -260,10 +270,8 @@ def handle_sales_flow(user_id, user_name, user_message):
                 return "¡Excelente! Hemos registrado tu pedido con éxito. Un asesor se pondrá en contacto contigo en breve. ¡Gracias por tu compra! 💖"
             else:
                 return "¡Uy! Tuvimos un problema al registrar tu pedido. Por favor, intenta confirmar nuevamente."
-        # CORREGIDO: Lógica de corrección ahora funciona para todos los flujos
         elif 'no' in text:
             tipo_envio = session.get('tipo_envio')
-            # CORREGIDO: Se determina el estado previo de forma más segura
             previous_state = 'awaiting_delivery_details' if tipo_envio == 'Contra Entrega' else 'awaiting_shalom_details'
             session['state'] = previous_state
             return "Entendido. Para corregirlo, por favor, envíame *toda la información de envío de nuevo* en un solo mensaje."
@@ -304,7 +312,6 @@ def process_message(message, contacts):
         logger.info(f"Procesando de {contact_name} ({from_number}): '{text_body}'")
         session_exists = from_number in user_sessions
         text_lower = text_body.lower()
-        # MEJORADO: Se asegura que el bot no se salga del flujo de venta
         if session_exists:
             response_text = handle_sales_flow(from_number, contact_name, text_body)
         elif not session_exists and any(palabra in text_lower for palabra in ['comprar', 'pedido', 'coordinar', 'quiero uno']):
