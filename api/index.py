@@ -36,7 +36,7 @@ INFO_NEGOCIO = {
             "nombre_completo": "Collar Mágico Sol Radiant",
             "precio": "S/ 69.00",
             "material": "Acero inoxidable quirúrgico de alta calidad",
-            "propiedades": "Piedra termocrómica que cambia de color con la temperatura.",
+            "propiedades": "Piedra termocrámica que cambia de color con la temperatura.",
             "palabras_clave": ["1", "sol radiant", "collar mágico", "collar que cambia color"]
         },
         "producto_2": {
@@ -70,6 +70,8 @@ TODOS_LOS_DISTRITOS_LIMA = [
 COBERTURA_DELIVERY_LIMA = [ "ate", "barranco", "bellavista", "breña", "callao", "carabayllo", "carmen de la legua", "cercado de lima", "chorrillos", "comas", "el agustino", "independencia", "jesus maria", "la molina", "la perla", "la punta", "la victoria", "lince", "los olivos", "magdalena", "miraflores", "pueblo libre", "puente piedra", "rimac", "san borja", "san isidro", "san juan de lurigancho", "san juan de miraflores", "san luis", "san martin de porres", "san miguel", "santa anita", "surco", "surquillo", "villa el salvador", "villa maria del triunfo" ]
 ABREVIATURAS_DISTRITOS = { "sjl": "san juan de lurigancho", "sjm": "san juan de miraflores", "smp": "san martin de porres", "vmt": "villa maria del triunfo", "ves": "villa el salvador", "lima centro": "cercado de lima" }
 PALABRAS_CANCELACION = ["cancelar", "cancelo", "ya no quiero", "ya no", "mejor no", "detener", "no gracias"]
+PALABRAS_RELLENO = ["soy de", "es en", "es", "en", "para", "la", "el", "provincia", "departamento", "ciudad", "amiga", "amigo", "srta", "señorita", "joven", "gracias"]
+
 
 # ==============================================================================
 # 3. FUNCIONES DE GOOGLE SHEETS
@@ -174,24 +176,14 @@ def handle_sales_flow(user_id, user_name, user_message):
         elif 'lima' in text:
             session['state'] = 'awaiting_lima_district'
             return "¡Genial! Para saber qué tipo de envío te corresponde, por favor, indícame tu distrito."
+        # MEJORADO: Se omite la pregunta de la provincia y se va directo al acuerdo
         elif 'provincia' in text:
-            session['state'] = 'awaiting_province_name'
-            return "¡Genial! Hacemos envios a todo el Peru solo por Shalom, por favor, indícame tu provincia."
+            session.update({'state': 'awaiting_shalom_agreement', 'distrito': 'Provincia', 'tipo_envio': 'Shalom'})
+            return (f"Entendido. Para provincia, los envíos son por agencia Shalom y requieren un adelanto de {INFO_NEGOCIO['politicas_envio']['envio_shalom']['adelanto_requerido']}. "
+                    "¿Estás de acuerdo? (Sí/No)")
         else:
             return "¿Eres de Lima o de provincia? Por favor, responde con una de esas dos opciones."
     
-    # CORREGIDO: Lógica para extraer solo la provincia
-    elif current_state == 'awaiting_province_name':
-        # Asumimos que la provincia es la última palabra de la oración
-        provincia_cliente = user_message.split()[-1].title()
-        session.update({
-            'state': 'awaiting_shalom_agreement', 
-            'distrito': provincia_cliente, 
-            'tipo_envio': 'Shalom'
-        })
-        return (f"Entendido. Para {provincia_cliente}, los envíos son por agencia Shalom y requieren un adelanto de {INFO_NEGOCIO['politicas_envio']['envio_shalom']['adelanto_requerido']}. "
-                "¿Estás de acuerdo? (Sí/No)")
-
     elif current_state == 'awaiting_lima_district':
         distrito_cobertura = verificar_cobertura(text)
         if distrito_cobertura:
@@ -211,7 +203,8 @@ def handle_sales_flow(user_id, user_name, user_message):
     elif current_state == 'awaiting_shalom_experience':
         if 'si' in text or 'sí' in text:
             session['state'] = 'awaiting_shalom_details'
-            return "¡Perfecto! Bríndame en un solo mensaje tu Nombre Completo, DNI y la dirección de la agencia Shalom donde recoges.✍🏼"
+            # MEJORADO: Se piden los 4 datos, incluyendo Provincia y Distrito
+            return "¡Perfecto! Bríndame en un solo mensaje tu Nombre Completo, DNI, Provincia y Distrito, y la dirección de la agencia Shalom donde recoges.✍🏼"
         else:
             session['state'] = 'awaiting_shalom_agency_knowledge'
             explicacion_shalom = (
@@ -226,25 +219,36 @@ def handle_sales_flow(user_id, user_name, user_message):
     elif current_state == 'awaiting_shalom_agency_knowledge':
         if 'si' in text or 'sí' in text:
             session['state'] = 'awaiting_shalom_details'
-            return "¡Genial! Bríndame en un solo mensaje tu Nombre, DNI y la dirección de la agencia Shalom.✍🏼"
+            # MEJORADO: Se piden los 4 datos, incluyendo Provincia y Distrito
+            return "¡Genial! Bríndame en un solo mensaje tu Nombre Completo, DNI, Provincia y Distrito, y la dirección de la agencia Shalom.✍🏼"
         else:
             del user_sessions[user_id]
             return "Entiendo. Te recomendamos buscar tu agencia más cercana en la página de Shalom para una futura compra. ¡Gracias!"
     elif current_state in ['awaiting_delivery_details', 'awaiting_shalom_details']:
         session['detalles_cliente'] = user_message 
         session['state'] = 'awaiting_final_confirmation'
+        
+        # MEJORADO: La línea de "Lugar de Envío" solo aparece para Lima Contra Entrega
+        lugar_de_envio_line = ""
+        if session.get('tipo_envio') == 'Contra Entrega':
+            lugar_de_envio_line = f"Lugar de Envío: {session.get('distrito', 'No especificado')}\n\n"
+
         resumen = (
             "¡Perfecto, ya casi terminamos! ✅\n"
             "Revisa que tus datos sean correctos:\n\n"
             f"Pedido: 1x {session.get('producto_seleccionado', '')}\n"
             f"Total: {session.get('precio_producto', '')}\n"
-            f"Lugar de Envío: {session.get('distrito', 'No especificado')}\n\n"
+            f"{lugar_de_envio_line}"
             f"Datos de Envío:\n{session.get('detalles_cliente', '')}\n\n"
             "¿Confirmas que todo es correcto? (Sí/No)"
         )
         return resumen
     elif current_state == 'awaiting_final_confirmation':
         if 'si' in text or 'sí' in text or 'correcto' in text:
+            # MEJORADO: Se actualiza el 'distrito' con los datos reales del cliente para guardarlo en Sheets
+            if session.get('tipo_envio') == 'Shalom':
+                 session['distrito'] = session.get('detalles_cliente', 'Provincia')
+
             datos_del_pedido = {
                 'producto_seleccionado': session.get('producto_seleccionado'),
                 'precio_producto': session.get('precio_producto'),
