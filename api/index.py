@@ -197,8 +197,8 @@ def generate_response(text, name, from_number):
     if any(saludo in text for saludo in saludos_comunes):
         productos_disponibles = [f"*{idx+1}️⃣ {INFO_NEGOCIO['productos'][key]['nombre_completo']}*" for idx, key in enumerate(INFO_NEGOCIO['productos'])]
         texto_productos = "\n".join(productos_disponibles)
-        return (f"¡Hola {name}! 👋✨ Soy tu asesora virtual de Daaqui Joyas.\n\n" f"Tenemos en stock estas joyas mágicas con *envío gratis*:\n\n{texto_productos}\n\n" f"Escribe el *número* o el *nombre* del producto que te gustaría conocer.")
-    return f"¡Hola {name}! 👋 No entendí tu consulta. Puedes preguntar sobre nuestros *productos*, *envío* o *pagos*."
+        return (f"¡Hola {name}! 👋🏽✨ Soy tu asesora virtual de Daaqui Joyas.\n\n" f"Tenemos en stock estas joyas mágicas con *envío gratis*:\n\n{texto_productos}\n\n" f"Escribe el *número* o el *nombre* del producto que te gustaría conocer.")
+    return f"¡Hola {name}! 👋🏽 No entendí tu consulta. Puedes preguntar sobre nuestros *productos*, *envío* o *pagos*."
 
 # ==============================================================================
 # 5. LÓGICA DE VENTA - AHORA USANDO FIRESTORE
@@ -227,14 +227,17 @@ def handle_sales_flow(user_id, user_name, user_message, session):
         if 'provincia' in text:
             session['state'] = 'awaiting_province_details'
             save_session(user_id, session)
-            return "¡Entendido! Para continuar, por favor, indícame tu *provincia y distrito*. ✍️"
+            return "¡Entendido! Para continuar, por favor, indícame tu *provincia y distrito*. ✍🏽\n\n📝 *Ej: Arequipa, Arequipa*"
         
         distrito_lima = es_distrito_de_lima(text)
         if distrito_lima:
             if distrito_lima.lower() in [d.lower() for d in COBERTURA_DELIVERY_LIMA]:
                 session.update({'state': 'awaiting_delivery_details', 'distrito': distrito_lima, 'tipo_envio': 'Contra Entrega'})
                 save_session(user_id, session)
-                return f"¡Excelente! 🏙️ Tenemos cobertura en *{distrito_lima}*.\n\nPara completar tu pedido, necesito que me brindes en *un solo mensaje*: Nombre Completo, Dirección exacta y Referencia del domicilio. ✍🏼"
+                return ("¡Excelente! 🏙️ Tenemos cobertura en *{}*.\n\n"
+                        "Para completar tu pedido, por favor, envíame en *un solo mensaje* los siguientes datos:\n\n"
+                        "*Nombre Completo, Dirección exacta y una Referencia.* ✍🏽\n\n"
+                        "📝 *Ej: Ana Pérez, Jr. Gamarra 123, Depto 501, La Victoria. Al lado de la farmacia Inkafarma.*").format(distrito_lima)
             else:
                 session.update({'state': 'awaiting_shalom_agreement', 'distrito': distrito_lima, 'tipo_envio': 'Shalom'})
                 save_session(user_id, session)
@@ -257,7 +260,10 @@ def handle_sales_flow(user_id, user_name, user_message, session):
         if distrito_cobertura:
             session.update({'state': 'awaiting_delivery_details', 'distrito': distrito_cobertura, 'tipo_envio': 'Contra Entrega'})
             save_session(user_id, session)
-            return f"¡Excelente! 🏙️ Tenemos cobertura en *{distrito_cobertura}*.\n\nPara completar tu pedido, necesito que me brindes en *un solo mensaje*: Nombre Completo, Dirección exacta y Referencia del domicilio. ✍🏼"
+            return ("¡Excelente! 🏙️ Tenemos cobertura en *{}*.\n\n"
+                    "Para completar tu pedido, por favor, envíame en *un solo mensaje* los siguientes datos:\n\n"
+                    "*Nombre Completo, Dirección exacta y una Referencia.* ✍🏽\n\n"
+                    "📝 *Ej: Ana Pérez, Jr. Gamarra 123, Depto 501, La Victoria. Al lado de la farmacia Inkafarma.*").format(distrito_cobertura)
         else:
             distrito_detectado = es_distrito_de_lima(text)
             distrito_para_guardar = distrito_detectado if distrito_detectado else user_message.title()
@@ -295,7 +301,7 @@ def handle_sales_flow(user_id, user_name, user_message, session):
         if 'si' in text or 'sí' in text:
             session['state'] = 'awaiting_shalom_details'
             save_session(user_id, session)
-            return "¡Genial! Para terminar, bríndame en un solo mensaje tu *Nombre Completo, DNI y la dirección exacta de la agencia Shalom* donde recogerás tu pedido. ✍️"
+            return "¡Genial! Para terminar, bríndame en un solo mensaje tu *Nombre Completo, DNI y la dirección exacta* donde recogerás tu pedido. ✍🏽\n\n📝 *Ej: Ana García, 12345678, Av. Ejército 123 - Arequipa*"
         else:
             session['state'] = 'awaiting_shalom_agency_knowledge'
             save_session(user_id, session)
@@ -313,7 +319,7 @@ def handle_sales_flow(user_id, user_name, user_message, session):
         if 'si' in text or 'sí' in text:
             session['state'] = 'awaiting_shalom_details'
             save_session(user_id, session)
-            return "¡Genial! Para terminar, bríndame en un solo mensaje tu *Nombre Completo, DNI y la dirección exacta de la agencia Shalom* donde recogerás tu pedido. ✍️"
+            return "¡Genial! Para terminar, bríndame en un solo mensaje tu *Nombre Completo, DNI y la dirección exacta* donde recogerás tu pedido. ✍🏽\n\n📝 *Ej: Ana García, 12345678, Av. Ejército 123 - Arequipa*"
         else:
             # Caso B: Respuesta cuando el cliente no conoce una agencia Shalom
             delete_session(user_id)
@@ -385,7 +391,7 @@ def handle_sales_flow(user_id, user_name, user_message, session):
             session['state'] = previous_state
             save_session(user_id, session)
             # Caso E: Respuesta cuando el cliente quiere corregir sus datos
-            return "¡Entendido, lo corregimos! 😊 Para asegurar que tu joya llegue sin problemas, por favor envíame de nuevo los *datos de envío completos* en un solo mensaje. ✍️"
+            return "¡Entendido, lo corregimos! 😊 Para asegurar que tu joya llegue sin problemas, por favor envíame de nuevo los *datos de envío completos* en un solo mensaje. ✍🏽"
         else:
             return "Por favor, responde con *'Sí'* para confirmar o *'No'* para corregir."
     
@@ -488,3 +494,4 @@ def home():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
