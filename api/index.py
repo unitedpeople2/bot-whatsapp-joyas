@@ -174,19 +174,19 @@ def handle_sales_flow(user_id, user_name, user_message):
         elif 'lima' in text:
             session['state'] = 'awaiting_lima_district'
             return "¡Genial! Para saber qué tipo de envío te corresponde, por favor, indícame tu distrito."
-        # MEJORADO: Se añade el nuevo paso para preguntar la provincia
         elif 'provincia' in text:
             session['state'] = 'awaiting_province_name'
             return "¡Genial! Hacemos envios a todo el Peru solo por Shalom, por favor, indícame tu provincia."
         else:
             return "¿Eres de Lima o de provincia? Por favor, responde con una de esas dos opciones."
     
-    # NUEVO: Estado para manejar la respuesta de la provincia
+    # CORREGIDO: Lógica para extraer solo la provincia
     elif current_state == 'awaiting_province_name':
-        provincia_cliente = user_message.title()
+        # Asumimos que la provincia es la última palabra de la oración
+        provincia_cliente = user_message.split()[-1].title()
         session.update({
             'state': 'awaiting_shalom_agreement', 
-            'distrito': provincia_cliente, # Usamos 'distrito' para guardar la ubicación
+            'distrito': provincia_cliente, 
             'tipo_envio': 'Shalom'
         })
         return (f"Entendido. Para {provincia_cliente}, los envíos son por agencia Shalom y requieren un adelanto de {INFO_NEGOCIO['politicas_envio']['envio_shalom']['adelanto_requerido']}. "
