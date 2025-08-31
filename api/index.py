@@ -56,7 +56,6 @@ INFO_NEGOCIO = {
         "metodos_pago": { 
             "contra_entrega": "Para delivery en Lima puedes pagar con Efectivo, Yape o Plin al recibir tu pedido.", 
             "adelanto_shalom": "El adelanto para envíos por Shalom puedes realizarlo por Yape, Plin o Transferencia.",
-            # NUEVO: Datos para el pago del adelanto
             "yape_numero": "987654321",
             "plin_numero": "987654321",
             "titular_nombre": "Nombre Apellido"
@@ -161,10 +160,12 @@ def generate_response(text, name, from_number):
     return f"¡Hola {name}! 👋 No entendí tu consulta. Puedes preguntar sobre nuestros productos, 'envío' o 'pagos'."
 
 def handle_sales_flow(user_id, user_name, user_message):
-    session = user_sessions.get(user_id, {})
+    session = user_sessions[user_id]
     current_state = session.get('state')
     text = user_message.lower().strip()
     
+    logger.info(f"[DEBUG] User: {user_id}, State: {current_state}, Message: {text}")
+
     if any(palabra in text for palabra in PALABRAS_CANCELACION):
         if user_id in user_sessions: del user_sessions[user_id]
         return "Entendido, he cancelado el proceso. Si cambias de opinión o necesitas algo más, no dudes en escribirme. ¡Que tengas un buen día! 😊"
@@ -172,23 +173,31 @@ def handle_sales_flow(user_id, user_name, user_message):
     if current_state == 'awaiting_product_selection':
         producto_key, producto_info = buscar_producto(text, return_key=True)
         if producto_info:
-            session.update({'state': 'awaiting_location', 'producto_seleccionado': producto_info['nombre_completo'], 'precio_producto': producto_info['precio']})
+            session['state'] = 'awaiting_location'
+            session['producto_seleccionado'] = producto_info['nombre_completo']
+            session['precio_producto'] = producto_info['precio']
             return f"¡Confirmado: {producto_info['nombre_completo']}! Para continuar, por favor, dime: ¿eres de Lima o de provincia?"
         return "No pude identificar el producto. Por favor, intenta con el número o nombre exacto."
     elif current_state == 'awaiting_location':
         distrito_lima = es_distrito_de_lima(text)
         if distrito_lima:
             if distrito_lima.lower() in COBERTURA_DELIVERY_LIMA:
-                session.update({'state': 'awaiting_delivery_details', 'distrito': distrito_lima, 'tipo_envio': 'Contra Entrega'})
+                session['state'] = 'awaiting_delivery_details'
+                session['distrito'] = distrito_lima
+                session['tipo_envio'] = 'Contra Entrega'
                 return f"¡Excelente! 🏙️ Tenemos cobertura en {distrito_lima}.\nPara completar tu pedido, necesito que me brindes en un solo mensaje: Nombre Completo, Dirección exacta y Referencia del domicilio. ✍🏼"
             else:
-                session.update({'state': 'awaiting_shalom_agreement', 'distrito': distrito_lima, 'tipo_envio': 'Shalom'})
+                session['state'] = 'awaiting_shalom_agreement'
+                session['distrito'] = distrito_lima
+                session['tipo_envio'] = 'Shalom'
                 return (f"Entendido. Para {distrito_lima}, los envíos son por Shalom y requieren un adelanto de {INFO_NEGOCIO['politicas_envio']['envio_shalom']['adelanto_requerido']}. " "¿Estás de acuerdo? (Sí/No)")
         elif 'lima' in text:
             session['state'] = 'awaiting_lima_district'
             return "¡Genial! Para saber qué tipo de envío te corresponde, por favor, indícame tu distrito."
         elif 'provincia' in text:
-            session.update({'state': 'awaiting_shalom_agreement', 'distrito': 'Provincia', 'tipo_envio': 'Shalom'})
+            session['state'] = 'awaiting_shalom_agreement'
+            session['distrito'] = 'Provincia'
+            session['tipo_envio'] = 'Shalom'
             return (f"Entendido. Para provincia, los envíos son por agencia Shalom y requieren un adelanto de {INFO_NEGOCIO['politicas_envio']['envio_shalom']['adelanto_requerido']}. "
                     "¿Estás de acuerdo? (Sí/No)")
         else:
@@ -196,15 +205,19 @@ def handle_sales_flow(user_id, user_name, user_message):
     elif current_state == 'awaiting_lima_district':
         distrito_cobertura = verificar_cobertura(text)
         if distrito_cobertura:
-            session.update({'state': 'awaiting_delivery_details', 'distrito': distrito_cobertura, 'tipo_envio': 'Contra Entrega'})
+            session['state'] = 'awaiting_delivery_details'
+            session['distrito'] = distrito_cobertura
+            session['tipo_envio'] = 'Contra Entrega'
             return f"¡Excelente! 🏙️ Tenemos cobertura en {distrito_cobertura}.\nPara completar tu pedido, necesito que me brindes en un solo mensaje: Nombre Completo, Dirección exacta y Referencia del domicilio. ✍🏼"
         else:
             distrito_sin_cobertura = user_message.title()
-            session.update({'state': 'awaiting_shalom_agreement', 'distrito': distrito_sin_cobertura, 'tipo_envio': 'Shalom'})
+            session['state'] = 'awaiting_shalom_agreement'
+            session['distrito'] = distrito_sin_cobertura
+            session['tipo_envio'] = 'Shalom'
             return (f"Entendido. Para {distrito_sin_cobertura}, los envíos son por Shalom y requieren un adelanto de {INFO_NEGOCIO['politicas_envio']['envio_shalom']['adelanto_requerido']}. " "¿Estás de acuerdo? (Sí/No)")
     elif current_state == 'awaiting_shalom_agreement':
         if 'si' in text or 'sí' in text or 'de acuerdo' in text:
-            session.update({'state': 'awaiting_shalom_experience', 'tipo_envio': 'Shalom'})
+            session['state'] = 'awaiting_shalom_experience'
             return "¿Alguna vez has recogido un pedido en una agencia Shalom? (Sí/No)"
         else:
             if user_id in user_sessions: del user_sessions[user_id]
@@ -278,7 +291,6 @@ def handle_sales_flow(user_id, user_name, user_message):
             
             elif session.get('tipo_envio') == 'Shalom':
                 session['state'] = 'awaiting_payment_proof'
-                # CORREGIDO: Ruta correcta al diccionario de métodos de pago
                 pago = INFO_NEGOCIO['datos_generales']['metodos_pago']
                 mensaje_pago = (
                     "¡Gracias por confirmar! Para completar tu pedido, puedes realizar el adelanto de S/ 20.00 a cualquiera de estas cuentas:\n\n"
@@ -353,24 +365,23 @@ def process_message(message, contacts):
         
         logger.info(f"Procesando de {contact_name} ({from_number}): Tipo='{message_type}', Contenido='{text_body}'")
 
-        session = user_sessions.get(from_number, {})
-        current_state = session.get('state')
-        
         response_text = None
-
-        if current_state == 'awaiting_payment_proof' and (message_type == 'image' or 'listo' in text_body.lower()):
-            response_text = handle_sales_flow(from_number, contact_name, "COMPROBANTE_RECIBIDO")
-        elif message_type == 'text':
-            session_exists = from_number in user_sessions
-            text_lower = text_body.lower()
-            if not session_exists and any(palabra in text_lower for palabra in ['comprar', 'pedido', 'coordinar', 'quiero uno']):
+        text_lower = text_body.lower()
+        
+        if from_number not in user_sessions:
+            if any(palabra in text_lower for palabra in ['comprar', 'pedido', 'coordinar', 'quiero uno']):
                 user_sessions[from_number] = {'state': 'awaiting_product_selection'}
-                response_text = handle_sales_flow(from_number, contact_name, text_body)
-            elif session_exists:
                 response_text = handle_sales_flow(from_number, contact_name, text_body)
             else:
                 response_text = generate_response(text_body, contact_name, from_number)
-        
+        else: 
+            session = user_sessions[from_number]
+            current_state = session.get('state')
+            if current_state == 'awaiting_payment_proof' and (message_type == 'image' or 'listo' in text_lower):
+                response_text = handle_sales_flow(from_number, contact_name, "COMPROBANTE_RECIBIDO")
+            elif message_type == 'text':
+                response_text = handle_sales_flow(from_number, contact_name, text_body)
+
         if response_text: 
             send_whatsapp_message(from_number, {"type": "text", "text": {"body": response_text}})
             
