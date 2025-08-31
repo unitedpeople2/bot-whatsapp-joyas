@@ -31,12 +31,15 @@ try:
             firebase_admin.initialize_app(cred)
         
         db = firestore.client()
-        logger.info("Firebase inicializado correctamente.")
+        logger.info("✅ Conexión con Firebase establecida correctamente.")
     else:
-        logger.error("La variable de entorno FIREBASE_SERVICE_ACCOUNT_JSON no está configurada.")
+        logger.error("❌ La variable de entorno FIREBASE_SERVICE_ACCOUNT_JSON no está configurada o está vacía.")
         db = None
+except json.JSONDecodeError as e:
+    logger.error(f"❌ Error decodificando el JSON de Firebase. Revisa el formato de la variable de entorno. Error: {e}")
+    db = None
 except Exception as e:
-    logger.error(f"Error inicializando Firebase: {e}")
+    logger.error(f"❌ Error crítico inicializando Firebase: {e}")
     db = None
 
 app = Flask(__name__)
@@ -451,14 +454,3 @@ def home():
 
 if __name__ == '__main__':
     app.run(debug=True)
-```
-
-### Paso 3: Comandos para Actualizar en GitHub
-
-Finalmente, aquí tienes los comandos para desplegar esta solución definitiva.
-
-```bash
-git add .
-git commit -m "Refactor: Integra Firestore para memoria persistente y estabilidad"
-git push
-
