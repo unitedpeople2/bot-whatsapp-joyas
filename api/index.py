@@ -120,18 +120,23 @@ def find_product_by_keywords(text):
         logger.error(f"Error buscando producto por palabras clave: {e}")
     return None, None
 
-def save_completed_sale_and_customer(session_data):
+def save_completed_sale_and_customer(session_data, product_data):
     if not db: return False, None
     try:
         sale_id = str(uuid.uuid4())
         customer_id = session_data.get('whatsapp_id')
         
+        # Lógica robusta para asegurar el precio correcto
+        final_price = session_data.get('product_price')
+        if session_data.get('is_upsell'):
+            final_price = float(product_data.get('oferta_upsell', {}).get('precio_oferta', final_price))
+
         sale_data = {
             "fecha": firestore.SERVER_TIMESTAMP,
             "id_venta": sale_id,
             "producto_id": session_data.get('product_id'),
             "producto_nombre": session_data.get('product_name'),
-            "precio_venta": session_data.get('product_price'),
+            "precio_venta": final_price,
             "tipo_envio": session_data.get('tipo_envio'),
             "metodo_pago": session_data.get('metodo_pago'),
             "provincia": session_data.get('provincia'),
@@ -255,7 +260,8 @@ def handle_initial_message(from_number, user_name, text):
         new_session = {
             "state": "awaiting_occasion_response", "product_id": product_id,
             "product_name": nombre_producto, "product_price": float(precio),
-            "user_name": user_name, "whatsapp_id": from_number
+            "user_name": user_name, "whatsapp_id": from_number,
+            "is_upsell": False # Inicializamos la bandera de la oferta
         }
         save_session(from_number, new_session)
     else:
@@ -337,8 +343,10 @@ def handle_sales_flow(from_number, text, session):
         if 'oferta' in text.lower():
             session['product_name'] = oferta_upsell.get('nombre_producto_oferta', session['product_name'])
             session['product_price'] = float(oferta_upsell.get('precio_oferta', session['product_price']))
+            session['is_upsell'] = True # <--- LA BANDERA IMPORTANTE
             send_text_message(from_number, "¡Genial! Has elegido la oferta. ✨")
         else: 
+            session['is_upsell'] = False
             send_text_message(from_number, "¡Perfecto! Continuamos con tu collar individual. ✨")
         
         session['state'] = 'awaiting_location'
@@ -414,11 +422,17 @@ def handle_sales_flow(from_number, text, session):
         session.update({"state": "awaiting_final_confirmation", "detalles_cliente": text})
         save_session(from_number, session)
         
+        # Lógica robusta para el precio
+        final_price = session.get('product_price')
+        if session.get('is_upsell'):
+            final_price = float(product_data.get('oferta_upsell', {}).get('precio_oferta', final_price))
+            session['product_price'] = final_price # Re-aseguramos el precio en la sesión
+        
         resumen = (
             "¡Gracias! Revisa que todo esté correcto para proceder:\n\n"
             "**Resumen del Pedido:**\n"
             f"💎 {session.get('product_name', '')}\n"
-            f"💵 Total: S/ {session.get('product_price', 0):.2f}\n"
+            f"💵 Total: S/ {final_price:.2f}\n"
             f"🚚 Envío: {session.get('distrito', session.get('provincia', ''))} - **¡Totalmente Gratis!**\n"
             f"💳 **Pago: {session.get('metodo_pago', 'No definido')}**\n\n"
             "**Datos de Entrega:**\n"
@@ -515,7 +529,7 @@ def handle_sales_flow(from_number, text, session):
 
     elif current_state in ['awaiting_lima_payment', 'awaiting_shalom_payment']:
         if text == "COMPROBANTE_RECIBIDO":
-            guardado_exitoso, sale_data = save_completed_sale_and_customer(session)
+            guardado_exitoso, sale_data = save_completed_sale_and_customer(session, product_data)
             if guardado_exitoso:
                 guardar_pedido_en_sheet(sale_data)
                 
@@ -525,14 +539,15 @@ def handle_sales_flow(from_number, text, session):
                         f"Producto: {sale_data.get('producto_nombre')}\n"
                         f"Precio: S/ {sale_data.get('precio_venta'):.2f}\n"
                         f"Tipo: {sale_data.get('tipo_envio')}\n"
+                        f"Adelanto: S/ {sale_data.get('adelanto_recibido'):.2f}\n"
                         f"Cliente WA ID: {sale_data.get('cliente_id')}\n"
                         f"Detalles:\n{sale_data.get('detalles_cliente')}"
                     )
                     send_text_message(ADMIN_WHATSAPP_NUMBER, admin_message)
 
                 if session.get('tipo_envio') == 'Lima Contra Entrega':
-                    total = session.get('product_price', 0)
-                    adelanto = session.get('adelanto', 0)
+                    total = sale_data.get('precio_venta', 0)
+                    adelanto = sale_data.get('adelanto_recibido', 0)
                     restante = total - adelanto
                     dia_entrega = get_delivery_day_message()
                     horario = BUSINESS_RULES.get('horario_entrega_lima', 'durante el día')
@@ -623,4 +638,4 @@ def process_message(message, contacts):
 
 @app.route('/')
 def home():
-    return jsonify({'status': 'Bot Daaqui Activo - V5 Final'})
+    return jsonify({'status': 'Bot Daaqui Activo - V5 Definitivo'})
