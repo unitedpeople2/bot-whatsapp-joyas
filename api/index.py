@@ -5,10 +5,8 @@ from flask import Flask, request, jsonify
 import requests
 import logging
 import os
-from datetime import datetime, timedelta
 import re
 import json
-import gspread
 import firebase_admin
 from firebase_admin import credentials, firestore
 
@@ -17,84 +15,71 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ==========================================================
-# INICIALIZACIÓN DE FIREBASE (MEMORIA PERMANENTE)
+# INICIALIZACIÓN DE FIREBASE
 # ==========================================================
 try:
-    # Lee las credenciales desde la variable de entorno de Vercel
     service_account_info_str = os.environ.get('FIREBASE_SERVICE_ACCOUNT_JSON')
     if service_account_info_str:
         service_account_info = json.loads(service_account_info_str)
         cred = credentials.Certificate(service_account_info)
-        
-        # Evita la reinicialización en entornos de Vercel
         if not firebase_admin._apps:
             firebase_admin.initialize_app(cred)
-        
         db = firestore.client()
         logger.info("✅ Conexión con Firebase establecida correctamente.")
     else:
-        logger.error("❌ La variable de entorno FIREBASE_SERVICE_ACCOUNT_JSON no está configurada o está vacía.")
+        logger.error("❌ La variable de entorno FIREBASE_SERVICE_ACCOUNT_JSON no está configurada.")
         db = None
-except json.JSONDecodeError as e:
-    logger.error(f"❌ Error decodificando el JSON de Firebase. Revisa el formato de la variable de entorno. Error: {e}")
-    db = None
 except Exception as e:
     logger.error(f"❌ Error crítico inicializando Firebase: {e}")
     db = None
 
 app = Flask(__name__)
 
-# Configuración de variables de entorno de WhatsApp
+# ==========================================================
+# 2. CONFIGURACIÓN DEL NEGOCIO Y VARIABLES GLOBALES
+# ==========================================================
+# Las variables de entorno se obtienen al inicio para claridad
 WHATSAPP_TOKEN = os.environ.get('WHATSAPP_ACCESS_TOKEN')
 VERIFY_TOKEN = os.environ.get('WHATSAPP_VERIFY_TOKEN', 'JoyasBot2025!')
-PHONE_NUMBER_ID = os.environ.get('WHATSAPP_PHONE_NUMBER_ID', '')
-ADMIN_WHATSAPP_NUMBER = os.environ.get('ADMIN_WHATSAPP_NUMBER') 
-WHATSAPP_API_URL = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages" if PHONE_NUMBER_ID else None
+PHONE_NUMBER_ID = os.environ.get('WHATSAPP_PHONE_NUMBER_ID')
+ADMIN_WHATSAPP_NUMBER = os.environ.get('ADMIN_WHATSAPP_NUMBER')
+RUC_EMPRESA = "10700761130" # RUC de la empresa para mensajes de confianza
 
 # ==============================================================================
-# 2. ÁREA DE CONFIGURACIÓN DEL NEGOCIO
+# 3. FUNCIONES DE COMUNICACIÓN CON WHATSAPP
 # ==============================================================================
-INFO_NEGOCIO = {
-    "productos": {
-        "producto_1": {
-            "nombre_completo": "Collar Mágico Sol Radiant",
-            "precio": "S/ 69.00",
-            "material": "Acero inoxidable quirúrgico de alta calidad",
-            "propiedades": "Piedra termocrómica que cambia de color con la temperatura.",
-            "palabras_clave": ["1", "sol radiant", "collar mágico", "collar que cambia color"]
-        },
-        "producto_2": {
-            "nombre_completo": "Aretes Constelación Lunar",
-            "precio": "S/ 59.00",
-            "material": "Acero inoxidable con incrustaciones de zircón.",
-            "propiedades": "Brillan sutilmente en la oscuridad después de exponerse a la luz.",
-            "palabras_clave": ["2", "aretes", "lunar", "constelación", "brillan"]
-        }
-    },
-    "politicas_envio": {
-        "delivery_lima": { "modalidad": "Pago Contra Entrega a domicilio", "costo": "Gratis", "adelanto_requerido": "No requiere adelanto", "tiempo_entrega": "1 a 2 días hábiles" },
-        "envio_shalom": { "modalidad": "Recojo en agencia Shalom", "costo": "Gratis", "adelanto_requerido": "S/ 20.00", "tiempo_entrega_lima_sin_cobertura": "2 a 3 días hábiles", "tiempo_entrega_provincias": "3 a 7 días hábiles", "info_adicional": "Todos los envíos a provincias y zonas de Lima sin cobertura son únicamente por Shalom."}
-    },
-    "datos_generales": {
-        "tienda_fisica": "No contamos con tienda física. Somos una tienda 100% online.", "garantia": "Ofrecemos una garantía de 15 días por cualquier defecto de fábrica.", "material_joyas": "Todas nuestras joyas son de acero inoxidable quirúrgico.", "medida_cadena": "El largo estándar de nuestras cadenas es de 45 cm.", "empaque": "¡Sí! Todas tus compras incluyen una hermosa cajita de regalo 🎁.", 
-        "metodos_pago": { 
-            "contra_entrega": "Para delivery en Lima puedes pagar con Efectivo, Yape o Plin al recibir tu pedido.", 
-            "adelanto_shalom": "El adelanto para envíos por Shalom puedes realizarlo por Yape, Plin o Transferencia.",
-            "yape_numero": "987654321",
-            "plin_numero": "987654321",
-            "titular_nombre": "Nombre Apellido"
-        }
-    }
-}
-TODOS_LOS_DISTRITOS_LIMA = [ "ancón", "ate", "barranco", "breña", "carabayllo", "chaclacayo", "chorrillos", "cieneguilla", "comas", "el agustino", "independencia", "jesús maría", "la molina", "la victoria", "lince", "los olivos", "lurigancho-chosica", "chosica", "lurín", "magdalena del mar", "miraflores", "pachacámac", "pucusana", "pueblo libre", "puente piedra", "punta hermosa", "punta negra", "rímac", "san bartolo", "san borja", "san isidro", "san juan de lurigancho", "san juan de miraflores", "san luis", "san martín de porres", "san miguel", "santa anita", "santa maría del mar", "santa rosa", "santiago de surco", "surquillo", "villa el salvador", "villa maría del triunfo", "cercado de lima", "bellavista", "carmen de la legua", "la perla", "la punta", "ventanilla", "callao" ]
-COBERTURA_DELIVERY_LIMA = [ "ate", "barranco", "bellavista", "breña", "callao", "carabayllo", "carmen de la legua", "cercado de lima", "chorrillos", "comas", "el agustino", "independencia", "jesus maria", "la molina", "la perla", "la punta", "la victoria", "lince", "los olivos", "magdalena", "miraflores", "pueblo libre", "puente piedra", "rimac", "san borja", "san isidro", "san juan de lurigancho", "san juan de miraflores", "san luis", "san martin de porres", "san miguel", "santa anita", "surco", "surquillo", "villa el salvador", "villa maria del triunfo" ]
-ABREVIATURAS_DISTRITOS = { "sjl": "san juan de lurigancho", "sjm": "san juan de miraflores", "smp": "san martin de porres", "vmt": "villa maria del triunfo", "ves": "villa el salvador", "lima centro": "cercado de lima" }
-PALABRAS_CANCELACION = ["cancelar", "cancelo", "ya no quiero", "ya no", "mejor no", "detener", "no gracias"]
+def send_whatsapp_message(to_number, message_data):
+    """Función genérica para enviar mensajes a través de la API de WhatsApp."""
+    if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
+        logger.error("Token de WhatsApp o ID de número de teléfono no configurados.")
+        return
+    
+    headers = {'Authorization': f'Bearer {WHATSAPP_TOKEN}', 'Content-Type': 'application/json'}
+    url = f"https://graph.facebook.com/v20.0/{PHONE_NUMBER_ID}/messages"
+    data = {"messaging_product": "whatsapp", "to": to_number, **message_data}
+    
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        response.raise_for_status()
+        logger.info(f"Mensaje enviado a {to_number}. Respuesta: {response.json()}")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error enviando mensaje a {to_number}: {e.response.text if e.response else e}")
+
+def send_text_message(to_number, text):
+    """Envía un mensaje de texto."""
+    message_data = {"type": "text", "text": {"body": text}}
+    send_whatsapp_message(to_number, message_data)
+
+def send_image_message(to_number, image_url, caption=""):
+    """Envía una imagen con una descripción opcional."""
+    message_data = {"type": "image", "image": {"link": image_url, "caption": caption}}
+    send_whatsapp_message(to_number, message_data)
 
 # ==============================================================================
-# 3. FUNCIONES DE MANEJO DE SESIÓN CON FIRESTORE
+# 4. FUNCIONES DE INTERACCIÓN CON FIRESTORE (BASE DE DATOS)
 # ==============================================================================
 def get_session(user_id):
+    """Obtiene la sesión de un usuario desde Firestore."""
     if not db: return None
     try:
         doc_ref = db.collection('sessions').document(user_id)
@@ -105,393 +90,198 @@ def get_session(user_id):
         return None
 
 def save_session(user_id, session_data):
+    """Guarda o actualiza la sesión de un usuario en Firestore."""
     if not db: return
     try:
-        db.collection('sessions').document(user_id).set(session_data)
+        db.collection('sessions').document(user_id).set(session_data, merge=True)
     except Exception as e:
         logger.error(f"Error guardando sesión para {user_id}: {e}")
 
 def delete_session(user_id):
+    """Elimina la sesión de un usuario de Firestore."""
     if not db: return
     try:
         db.collection('sessions').document(user_id).delete()
     except Exception as e:
         logger.error(f"Error eliminando sesión para {user_id}: {e}")
 
-# ==============================================================================
-# 4. FUNCIONES AUXILIARES Y DE LÓGICA
-# ==============================================================================
-def guardar_pedido_en_sheet(datos_pedido):
+def find_product_by_keywords(text):
+    """Busca un producto en Firestore que coincida con las palabras clave."""
+    if not db: return None, None
     try:
-        logger.info("[Sheets] Iniciando proceso de guardado...")
-        creds_json_str = os.environ.get('GOOGLE_CREDENTIALS_JSON')
-        sheet_name = os.environ.get('GOOGLE_SHEET_NAME')
-        if not creds_json_str or not sheet_name:
-            logger.error("[Sheets] ERROR: Faltan variables de entorno.")
-            return False
-        creds_dict = json.loads(creds_json_str)
-        gc = gspread.service_account_from_dict(creds_dict)
-        spreadsheet = gc.open(sheet_name)
-        sh = spreadsheet.sheet1
-        nueva_fila = [
-            datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-            datos_pedido.get('producto_seleccionado', 'N/A'),
-            datos_pedido.get('precio_producto', 'N/A'),
-            datos_pedido.get('tipo_envio', 'N/A'),
-            datos_pedido.get('distrito', 'N/A'),
-            datos_pedido.get('detalles_cliente', 'N/A'),
-            datos_pedido.get('whatsapp_id', 'N/A')
-        ]
-        sh.append_row(nueva_fila)
-        logger.info(f"[Sheets] ¡ÉXITO! Pedido guardado.")
-        return True
+        # Simplificación: por ahora, buscamos el producto principal por su ID.
+        # En el futuro, esta función puede ser más compleja para buscar por nombre, etc.
+        # Basado en tu guion, el producto clave es 'collar-girasol-radiant-01'
+        keywords_girasol = ["girasol", "radiant", "precio", "cambia de color"]
+        if any(keyword in text.lower() for keyword in keywords_girasol):
+            product_id = "collar-girasol-radiant-01"
+            product_ref = db.collection('productos').document(product_id)
+            product_doc = product_ref.get()
+            if product_doc.exists:
+                return product_id, product_doc.to_dict()
     except Exception as e:
-        logger.error(f"[Sheets] ERROR INESPERADO: {e}")
-        return False
-
-def obtener_dia_entrega():
-    hoy = datetime.now()
-    if hoy.weekday() < 4: 
-        return "mañana"
-    elif hoy.weekday() == 4:
-        return "mañana (Sábado)"
-    else:
-        return "el Lunes"
-
-def verificar_cobertura(texto_usuario):
-    texto = texto_usuario.lower().strip()
-    for distrito in COBERTURA_DELIVERY_LIMA:
-        if re.search(r'\b' + re.escape(distrito) + r'\b', texto):
-            return distrito.title()
-    for abreviatura, nombre_completo in ABREVIATURAS_DISTRITOS.items():
-        if re.search(r'\b' + re.escape(abreviatura) + r'\b', texto):
-            return nombre_completo.title()
-    return None
-
-def es_distrito_de_lima(texto_usuario):
-    texto = texto_usuario.lower().strip()
-    # Priorizar nombres completos para evitar falsos positivos
-    for distrito in TODOS_LOS_DISTRITOS_LIMA:
-        if re.search(r'\b' + re.escape(distrito) + r'\b', texto):
-            return distrito.title()
-    for abreviatura, nombre_completo in ABREVIATURAS_DISTRITOS.items():
-        if re.search(r'\b' + re.escape(abreviatura) + r'\b', texto):
-            return nombre_completo.title()
-    return None
-
-def buscar_producto(texto_usuario, return_key=False):
-    texto = texto_usuario.lower()
-    for key, producto_info in INFO_NEGOCIO["productos"].items():
-        for palabra in producto_info["palabras_clave"]:
-            if palabra in texto:
-                return (key, producto_info) if return_key else producto_info
-    return (None, None) if return_key else None
-
-def generate_response(text, name, from_number):
-    text = text.lower()
-    distrito_encontrado = verificar_cobertura(text)
-    if distrito_encontrado: return f"¡Buenas noticias, {name}! Sí tenemos cobertura de delivery contra entrega en *{distrito_encontrado}*. 🎉\n\nPuedes iniciar tu pedido escribiendo 'comprar'."
-    producto_encontrado = buscar_producto(text)
-    if producto_encontrado: return (f"¡Te refieres a nuestro increíble *{producto_encontrado['nombre_completo']}*! ☀️\n\n" f"*{producto_encontrado['propiedades']}*\n" f"Material: {producto_encontrado['material']}.\n*Precio: {producto_encontrado['precio']}*.\n\n" f"Para ordenarlo, solo escribe 'comprar'.")
-    saludos_comunes = ['hola', 'hila', 'ola', 'buenos', 'buenas', 'bnas', 'qué tal', 'q tal', 'info']
-    if any(saludo in text for saludo in saludos_comunes):
-        productos_disponibles = [f"*{idx+1}️⃣ {INFO_NEGOCIO['productos'][key]['nombre_completo']}*" for idx, key in enumerate(INFO_NEGOCIO['productos'])]
-        texto_productos = "\n".join(productos_disponibles)
-        return (f"¡Hola {name}! 👋🏽✨ Soy tu asesora virtual de Daaqui Joyas.\n\n" f"Tenemos en stock estas joyas mágicas con *envío gratis*:\n\n{texto_productos}\n\n" f"Escribe el *número* o el *nombre* del producto que te gustaría conocer.")
-    return f"¡Hola {name}! 👋🏽 No entendí tu consulta. Puedes preguntar sobre nuestros *productos*, *envío* o *pagos*."
+        logger.error(f"Error buscando producto por palabras clave: {e}")
+    return None, None
 
 # ==============================================================================
-# 5. LÓGICA DE VENTA - AHORA USANDO FIRESTORE
+# 5. LÓGICA DE LA CONVERSACIÓN - ETAPA 1 (EMBUDO DE VENTAS INICIAL)
 # ==============================================================================
-def handle_sales_flow(user_id, user_name, user_message, session):
-    current_state = session.get('state')
-    text = user_message.lower().strip()
+def handle_initial_message(from_number, user_name, text):
+    """Maneja el primer mensaje de un usuario (cuando no hay sesión activa)."""
     
-    logger.info(f"[DEBUG] User: {user_id}, State: {current_state}, Message: {text}")
+    product_id, product_data = find_product_by_keywords(text)
 
-    if any(palabra in text for palabra in PALABRAS_CANCELACION):
-        delete_session(user_id)
-        return "Entendido, he cancelado el proceso. Si cambias de opinión o necesitas algo más, no dudes en escribirme. ¡Que tengas un buen día! 😊"
-    
-    if current_state == 'awaiting_product_selection':
-        producto_key, producto_info = buscar_producto(text, return_key=True)
-        if producto_info:
-            session['state'] = 'awaiting_location'
-            session['producto_seleccionado'] = producto_info['nombre_completo']
-            session['precio_producto'] = producto_info['precio']
-            save_session(user_id, session)
-            return f"¡Confirmado: *{producto_info['nombre_completo']}*! Para continuar, por favor, dime: ¿eres de *Lima* o de *provincia*?"
-        return "No pude identificar el producto. Por favor, intenta con el *número* o *nombre exacto*."
-
-    elif current_state == 'awaiting_location':
-        if 'provincia' in text:
-            session['state'] = 'awaiting_province_details'
-            save_session(user_id, session)
-            return "¡Entendido! Para continuar, por favor, indícame tu *provincia y distrito*. ✍🏽\n\n📝 *Ej: Arequipa, Arequipa*"
+    if product_data:
+        # Se encontró un producto, iniciamos el embudo de ventas.
         
-        distrito_lima = es_distrito_de_lima(text)
-        if distrito_lima:
-            if distrito_lima.lower() in [d.lower() for d in COBERTURA_DELIVERY_LIMA]:
-                session.update({'state': 'awaiting_delivery_details', 'distrito': distrito_lima, 'tipo_envio': 'Contra Entrega'})
-                save_session(user_id, session)
-                return ("¡Excelente! 🏙️ Tenemos cobertura en *{}*.\n\n"
-                        "Para completar tu pedido, por favor, envíame en *un solo mensaje* los siguientes datos:\n\n"
-                        "*Nombre Completo, Dirección exacta y una Referencia.* ✍🏽\n\n"
-                        "📝 *Ej: Ana Pérez, Jr. Gamarra 123, Depto 501, La Victoria. Al lado de la farmacia Inkafarma.*").format(distrito_lima)
-            else:
-                session.update({'state': 'awaiting_shalom_agreement', 'distrito': distrito_lima, 'tipo_envio': 'Shalom'})
-                save_session(user_id, session)
-                mensaje = (f"¡Perfecto! Para envíos a *{distrito_lima}*, usamos la agencia *Shalom* para que tu joya llegue de forma segura. ✨\n\n"
-                           f"Para separar tu producto y gestionar el envío, requerimos un adelanto de *S/ 20.00*. Este monto funciona como un *compromiso para el recojo del pedido* en la agencia y nos permite enviarlo con total confianza.\n\n"
-                           "¿Estás de acuerdo para continuar? (Sí/No)")
-                return mensaje
-        
-        elif 'lima' in text:
-            session['state'] = 'awaiting_lima_district'
-            save_session(user_id, session)
-            # Caso C: Pregunta inicial para saber el distrito del cliente
-            return "¡Genial! ✨ Para empezar a coordinar la entrega de tu joya, por favor, dime: ¿en qué *distrito* te encuentras? 📍"
-        
-        else:
-            return "¿Eres de *Lima* o de *provincia*? Por favor, responde con una de esas dos opciones."
+        # Extraer datos del producto desde Firestore
+        nombre_producto = product_data.get('nombre', 'nuestro producto')
+        descripcion_corta = product_data.get('descripcion_corta', 'es simplemente increíble.')
+        precio = product_data.get('precio_base', 0)
+        url_imagen_principal = product_data.get('imagenes', {}).get('principal')
 
-    elif current_state == 'awaiting_lima_district':
-        distrito_cobertura = verificar_cobertura(text)
-        if distrito_cobertura:
-            session.update({'state': 'awaiting_delivery_details', 'distrito': distrito_cobertura, 'tipo_envio': 'Contra Entrega'})
-            save_session(user_id, session)
-            return ("¡Excelente! 🏙️ Tenemos cobertura en *{}*.\n\n"
-                    "Para completar tu pedido, por favor, envíame en *un solo mensaje* los siguientes datos:\n\n"
-                    "*Nombre Completo, Dirección exacta y una Referencia.* ✍🏽\n\n"
-                    "📝 *Ej: Ana Pérez, Jr. Gamarra 123, Depto 501, La Victoria. Al lado de la farmacia Inkafarma.*").format(distrito_cobertura)
-        else:
-            distrito_detectado = es_distrito_de_lima(text)
-            distrito_para_guardar = distrito_detectado if distrito_detectado else user_message.title()
-            
-            session.update({'state': 'awaiting_shalom_agreement', 'distrito': distrito_para_guardar, 'tipo_envio': 'Shalom'})
-            save_session(user_id, session)
-            mensaje = (f"¡Perfecto! Para envíos a *{distrito_para_guardar}*, usamos la agencia *Shalom* para que tu joya llegue de forma segura. ✨\n\n"
-                       f"Para separar tu producto y gestionar el envío, requerimos un adelanto de *S/ 20.00*. Este monto funciona como un *compromiso para el recojo del pedido* en la agencia y nos permite enviarlo con total confianza.\n\n"
-                       "¿Estás de acuerdo para continuar? (Sí/No)")
-            return mensaje
+        # 1. Enviar imagen principal
+        if url_imagen_principal:
+            send_image_message(from_number, url_imagen_principal)
 
-    elif current_state == 'awaiting_province_details':
-        session['distrito'] = user_message.title() # Guarda Provincia y Distrito
-        session['state'] = 'awaiting_shalom_agreement'
-        session['tipo_envio'] = 'Shalom'
-        save_session(user_id, session)
-        # Caso D: Explicación inicial sobre el adelanto
-        mensaje = ("¡Perfecto! Para envíos a provincia, usamos la agencia *Shalom* para que tu joya llegue de forma segura. ✨\n\n"
-                   "Para separar tu producto y gestionar el envío, requerimos un adelanto de *S/ 20.00*. Este monto funciona como un *compromiso para el recojo del pedido* en la agencia y nos permite enviarlo con total confianza.\n\n"
-                   "¿Estás de acuerdo para continuar? (Sí/No)")
-        return mensaje
-
-    elif current_state == 'awaiting_shalom_agreement':
-        if 'si' in text or 'sí' in text or 'de acuerdo' in text:
-            session['state'] = 'awaiting_shalom_experience'
-            save_session(user_id, session)
-            return "¿Alguna vez has recogido un pedido en una agencia *Shalom*? (Sí/No)"
-        else:
-            # Caso A: Respuesta cuando el cliente dice "No" al adelanto
-            delete_session(user_id)
-            return ("Comprendo perfectamente. ✨ El adelanto es la única forma que tenemos para poder *separar la joya a tu nombre* y que no se venda a otra persona, ¡nuestro stock es bastante exclusivo!\n\n"
-                    "Si te animas más tarde, no dudes en volver a escribirme. ¿Tienes alguna otra consulta sobre nuestros productos o materiales? 😊")
-
-    elif current_state == 'awaiting_shalom_experience':
-        if 'si' in text or 'sí' in text:
-            session['state'] = 'awaiting_shalom_details'
-            save_session(user_id, session)
-            return "¡Genial! Para terminar, bríndame en un solo mensaje tu *Nombre Completo, DNI y la dirección exacta* donde recogerás tu pedido. ✍🏽\n\n📝 *Ej: Ana García, 12345678, Av. Ejército 123 - Arequipa*"
-        else:
-            session['state'] = 'awaiting_shalom_agency_knowledge'
-            save_session(user_id, session)
-            explicacion_shalom = (
-                "¡No te preocupes! Te explico rápidamente cómo funciona:\n\n"
-                "🏪 *Shalom* es una empresa de envíos muy confiable.\n"
-                "🆔 Solo necesitas tu *DNI* para recoger tu paquete.\n"
-                "🔑 Te daremos un *código de seguridad* para que puedas recoger tu pedido.\n"
-                "🔒 Es un método *súper seguro y rápido*.\n\n"
-                "Como ves, es muy fácil. ¿Conoces la ubicación de alguna agencia Shalom donde podrías recoger tu pedido? (Sí/No)"
-            )
-            return explicacion_shalom
-
-    elif current_state == 'awaiting_shalom_agency_knowledge':
-        if 'si' in text or 'sí' in text:
-            session['state'] = 'awaiting_shalom_details'
-            save_session(user_id, session)
-            return "¡Genial! Para terminar, bríndame en un solo mensaje tu *Nombre Completo, DNI y la dirección exacta* donde recogerás tu pedido. ✍🏽\n\n📝 *Ej: Ana García, 12345678, Av. Ejército 123 - Arequipa*"
-        else:
-            # Caso B: Respuesta cuando el cliente no conoce una agencia Shalom
-            delete_session(user_id)
-            return ("Entiendo, no te preocupes. ¡Qué lástima! 😔 Para poder *garantizar que recibas tu joya de forma segura*, necesitamos tener una dirección de agencia Shalom como punto de entrega.\n\n"
-                    "Por ahora no podremos continuar con el envío. De todas formas, ¡muchas gracias por tu interés en Daaqui Joyas! Esperamos tener *más opciones de delivery en el futuro*. ✨")
-
-    elif current_state in ['awaiting_delivery_details', 'awaiting_shalom_details']:
-        session['detalles_cliente'] = user_message
-        session['state'] = 'awaiting_final_confirmation'
-        save_session(user_id, session)
-        
-        lugar_de_envio_line = ""
-        pregunta_final = "¿Confirmas que todo es correcto para proceder con el envío? (Sí/No)"
-
-        if session.get('tipo_envio') == 'Contra Entrega':
-            lugar_de_envio_line = f"Lugar de Envío: *{session.get('distrito', 'No especificado')}*\n\n"
-        elif session.get('tipo_envio') == 'Shalom':
-            lugar_de_envio_line = f"Lugar de Envío: *{session.get('distrito', 'No especificado')}*\n\n"
-            pregunta_final = "¿Confirmas estos datos para proceder con el adelanto? ✨ (Sí/No)"
-
-        resumen = (
-            "¡Perfecto, ya casi terminamos! ✅\n"
-            "Por favor, revisa que tus datos sean correctos:\n\n"
-            f"Pedido: 1x *{session.get('producto_seleccionado', '')}*\n"
-            f"Total: *{session.get('precio_producto', '')}*\n"
-            f"{lugar_de_envio_line}"
-            f"Datos de Envío:\n_{session.get('detalles_cliente', '')}_\n\n"
-            f"*{pregunta_final}*"
+        # 2. Enviar primer guion de venta
+        mensaje_inicial = (
+            f"¡Hola {user_name}! 🌞 El *{nombre_producto}* {descripcion_corta}\n\n"
+            f"Por nuestra campaña del 21 de Septiembre, llévatelo a un precio especial de *S/ {precio:.2f}* "
+            "(¡incluye envío gratis a todo el Perú! 🚚).\n\n"
+            "Cuéntame, ¿es un tesoro para ti o un regalo para alguien especial?"
         )
-        return resumen
+        send_text_message(from_number, mensaje_inicial)
 
-    elif current_state == 'awaiting_final_confirmation':
-        if 'si' in text or 'sí' in text or 'correcto' in text:
-            if session.get('tipo_envio') == 'Contra Entrega':
-                datos_del_pedido = { 'producto_seleccionado': session.get('producto_seleccionado'), 'precio_producto': session.get('precio_producto'), 'tipo_envio': session.get('tipo_envio'), 'distrito': session.get('distrito'), 'detalles_cliente': session.get('detalles_cliente'), 'whatsapp_id': user_id }
-                guardado_exitoso = guardar_pedido_en_sheet(datos_del_pedido)
-                if guardado_exitoso:
-                    if ADMIN_WHATSAPP_NUMBER:
-                        mensaje_notificacion = (f"🎉 ¡Nueva Venta Registrada! 🎉\n\n" f"Producto: {datos_del_pedido.get('producto_seleccionado')}\n" f"Precio: {datos_del_pedido.get('precio_producto')}\n" f"Tipo de Envío: {datos_del_pedido.get('tipo_envio')}\n" f"Distrito/Prov: {datos_del_pedido.get('distrito')}\n" f"Cliente WA ID: {datos_del_pedido.get('whatsapp_id')}\n\n" f"Detalles:\n{datos_del_pedido.get('detalles_cliente')}")
-                        send_whatsapp_message(ADMIN_WHATSAPP_NUMBER, {"type": "text", "text": {"body": mensaje_notificacion}})
-                    
-                    delete_session(user_id)
-                    dia_entrega = obtener_dia_entrega()
-                    mensaje_final_lima = (
-                        "¡Tu pedido ha sido confirmado! 🎉 ¡Gracias por tu compra en Daaqui!\n\n"
-                        f"Lo estarás recibiendo *{dia_entrega}*, en un rango de *12:00 pm a 7:00 pm*. "
-                        "Por favor, asegúrate de que alguien pueda recibirlo."
-                    )
-                    return mensaje_final_lima
-                else:
-                    return "¡Uy! Tuvimos un problema al registrar tu pedido. Por favor, intenta confirmar nuevamente."
-            
-            elif session.get('tipo_envio') == 'Shalom':
-                session['state'] = 'awaiting_payment_proof'
-                save_session(user_id, session)
-                pago = INFO_NEGOCIO['datos_generales']['metodos_pago']
-                mensaje_pago = (
-                    "¡Gracias por confirmar! Para completar tu pedido, puedes realizar el adelanto de *S/ 20.00* a cualquiera de estas cuentas:\n\n"
-                    f"💳 *YAPE:* {pago['yape_numero']}\n"
-                    f"💳 *PLIN:* {pago['plin_numero']}\n"
-                    f"👤 *Titular:* {pago['titular_nombre']}\n\n"
-                    "Una vez realizado, por favor, envíame una *captura de pantalla* o respóndeme con un 'listo' para agendar tu envío. 😊"
-                )
-                return mensaje_pago
+        # 3. Crear una sesión para continuar el flujo
+        new_session = {
+            "state": "awaiting_occasion_response",
+            "product_id": product_id,
+            "user_name": user_name
+        }
+        save_session(from_number, new_session)
 
-        elif 'no' in text:
-            tipo_envio = session.get('tipo_envio')
-            previous_state = 'awaiting_delivery_details' if tipo_envio == 'Contra Entrega' else 'awaiting_shalom_details'
-            session['state'] = previous_state
-            save_session(user_id, session)
-            # Caso E: Respuesta cuando el cliente quiere corregir sus datos
-            return "¡Entendido, lo corregimos! 😊 Para asegurar que tu joya llegue sin problemas, por favor envíame de nuevo los *datos de envío completos* en un solo mensaje. ✍🏽"
-        else:
-            return "Por favor, responde con *'Sí'* para confirmar o *'No'* para corregir."
-    
-    elif current_state == 'awaiting_payment_proof':
-        datos_del_pedido = { 'producto_seleccionado': session.get('producto_seleccionado'), 'precio_producto': session.get('precio_producto'), 'tipo_envio': session.get('tipo_envio'), 'distrito': session.get('distrito'), 'detalles_cliente': session.get('detalles_cliente'), 'whatsapp_id': user_id }
-        guardado_exitoso = guardar_pedido_en_sheet(datos_del_pedido)
-        if guardado_exitoso:
-            if ADMIN_WHATSAPP_NUMBER:
-                mensaje_notificacion = (f"🎉 ¡Nueva Venta Registrada! (Shalom) 🎉\n\n" f"Producto: {datos_del_pedido.get('producto_seleccionado')}\n" f"Cliente WA ID: {datos_del_pedido.get('whatsapp_id')}\n\n" "El cliente ha confirmado el pago. Revisa el chat para ver la captura y coordinar el envío.")
-                send_whatsapp_message(ADMIN_WHATSAPP_NUMBER, {"type": "text", "text": {"body": mensaje_notificacion}})
-            
-            delete_session(user_id)
-            mensaje_final_shalom = (
-                "¡Pago confirmado! ✨ Hemos agendado tu pedido.\n\n"
-                "En las próximas 24 horas hábiles, te enviaremos por aquí tu *código de seguimiento* de Shalom. ¡Gracias por tu compra en Daaqui Joyas!"
-            )
-            return mensaje_final_shalom
-        else:
-            return "¡Uy! Tuvimos un problema al registrar tu pedido. Un asesor se pondrá en contacto contigo."
-
-    return None
+    else:
+        # No se identificó un producto, enviar mensaje de bienvenida genérico
+        # (En el futuro, aquí podría haber un menú de opciones)
+        send_text_message(from_number, f"¡Hola {user_name}! 👋🏽✨ Bienvenida a *Daaqui Joyas*. Si deseas información sobre nuestro *Collar Mágico Girasol Radiant*, solo pregunta por él. 😊")
 
 # ==============================================================================
-# 6. FUNCIONES INTERNAS DEL BOT (WEBHOOK, ETC.)
+# 6. LÓGICA DE LA CONVERSACIÓN - ETAPA 2 (FLUJO DE COMPRA GUIADO)
+# ==============================================================================
+def handle_sales_flow(from_number, text, session):
+    """Maneja la conversación de un usuario con una sesión activa."""
+    current_state = session.get('state')
+    product_id = session.get('product_id')
+
+    # Obtener los datos del producto en cada paso para asegurar información actualizada
+    product_ref = db.collection('productos').document(product_id)
+    product_data = product_ref.get().to_dict()
+
+    if not product_data:
+        send_text_message(from_number, "Tuvimos un problema al encontrar los detalles de tu producto. Por favor, intenta de nuevo.")
+        delete_session(from_number)
+        return
+
+    # Extraer detalles para el segundo guion
+    url_imagen_empaque = product_data.get('imagenes', {}).get('empaque')
+    detalles = product_data.get('detalles', {})
+    material = detalles.get('material', 'material de alta calidad')
+    magia = "Su piedra central es termocromática, cambia de color con tu temperatura." # Descripción de la magia
+    presentacion = detalles.get('empaque', 'viene en una hermosa caja de regalo')
+
+    if current_state == 'awaiting_occasion_response':
+        # El cliente respondió a la pregunta abierta, ahora enviamos el segundo guion.
+        
+        # 1. Enviar imagen del empaque (si existe)
+        if url_imagen_empaque:
+            send_image_message(from_number, url_imagen_empaque)
+
+        # 2. Enviar segundo guion de persuasión
+        mensaje_persuasion = (
+            "¡Maravillosa elección! ✨ El *Collar Mágico Girasol Radiant* es pura energía. Aquí tienes todos los detalles:\n\n"
+            f"💎 *Material:* {material} ¡Hipoalergénico y no se oscurece!\n"
+            f"🔮 *La Magia:* {magia}\n"
+            f"🎁 *Presentación:* {presentacion}, ¡lista para sorprender!\n\n"
+            f"Para tu total seguridad, somos Daaqui Joyas, un negocio formal con *RUC {RUC_EMPRESA}*. ¡Tu compra es 100% segura! 🇵🇪\n\n"
+            "¡Estás a un paso de tenerlo! A continuación te mostraré las opciones para que elijas la que más te guste. *¿Continuamos?*"
+        )
+        send_text_message(from_number, mensaje_persuasion)
+
+        # 3. Actualizar estado
+        session['state'] = 'awaiting_purchase_confirmation'
+        save_session(from_number, session)
+
+    # Aquí irían los demás estados del flujo de compra (awaiting_purchase_confirmation, etc.)
+    # Por ahora, mantenemos esta estructura para validar la conexión con Firestore.
+    # Los pasos de pedir ubicación, datos de envío, etc., se agregarán en la siguiente fase.
+    else:
+        send_text_message(from_number, "Estoy un poco confundido. Si deseas reiniciar tu pedido, escribe 'cancelar' y vuelve a empezar.")
+
+
+# ==============================================================================
+# 7. WEBHOOK PRINCIPAL Y PROCESADOR DE MENSAJES
 # ==============================================================================
 @app.route('/api/webhook', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
-        mode, token, challenge = request.args.get('hub.mode'), request.args.get('hub.verify_token'), request.args.get('hub.challenge')
-        if mode == 'subscribe' and token == VERIFY_TOKEN: return challenge
-        return 'Forbidden', 403
+        mode = request.args.get('hub.mode')
+        token = request.args.get('hub.verify_token')
+        challenge = request.args.get('hub.challenge')
+        if mode == 'subscribe' and token == VERIFY_TOKEN:
+            return challenge
+        else:
+            return 'Forbidden', 403
+            
     elif request.method == 'POST':
         try:
             data = request.get_json()
-            logger.info(f"Webhook recibido: {json.dumps(data, indent=2)}") # Log completo para depuración
             if data.get('object') == 'whatsapp_business_account':
                 for entry in data.get('entry', []):
                     for change in entry.get('changes', []):
-                        value = change.get('value', {})
-                        if change.get('field') == 'messages' and value.get('messages'):
-                            for message in value.get('messages'):
-                                process_message(message, value.get('contacts', []))
+                        if change.get('field') == 'messages':
+                            value = change.get('value', {})
+                            if value.get('messages'):
+                                for message in value.get('messages'):
+                                    process_message(message, value.get('contacts', []))
             return jsonify({'status': 'success'}), 200
         except Exception as e:
             logger.error(f"Error procesando webhook: {e}")
             return jsonify({'error': str(e)}), 500
 
 def process_message(message, contacts):
+    """Procesa un mensaje entrante de WhatsApp."""
     try:
         from_number = message.get('from')
-        contact_name = next((c.get('profile', {}).get('name', 'Usuario') for c in contacts if c.get('wa_id') == from_number), 'Usuario')
-        text_body = message.get('text', {}).get('body', '')
-        message_type = message.get('type')
+        user_name = next((c.get('profile', {}).get('name', 'Usuario') for c in contacts if c.get('wa_id') == from_number), 'Usuario')
         
-        logger.info(f"Procesando de {contact_name} ({from_number}): Tipo='{message_type}', Contenido='{text_body}'")
+        if message.get('type') != 'text':
+            send_text_message(from_number, "Por ahora solo puedo entender mensajes de texto. 😊")
+            return
 
-        response_text = None
-        text_lower = text_body.lower()
-        
+        text_body = message.get('text', {}).get('body', '')
+        logger.info(f"Procesando de {user_name} ({from_number}): '{text_body}'")
+
+        if text_body.lower() in ['cancelar', 'salir', 'terminar']:
+            delete_session(from_number)
+            send_text_message(from_number, "Hecho. He cancelado el proceso actual. Si necesitas algo más, no dudes en escribirme. 😊")
+            return
+
         session = get_session(from_number)
         
         if not session:
-            if any(palabra in text_lower for palabra in ['comprar', 'pedido', 'coordinar', 'quiero uno']):
-                new_session = {'state': 'awaiting_product_selection'}
-                save_session(from_number, new_session)
-                response_text = handle_sales_flow(from_number, contact_name, text_body, new_session)
-            else:
-                response_text = generate_response(text_body, contact_name, from_number)
+            handle_initial_message(from_number, user_name, text_body)
         else:
-            current_state = session.get('state')
-            if current_state == 'awaiting_payment_proof' and (message_type == 'image' or 'listo' in text_lower):
-                response_text = handle_sales_flow(from_number, contact_name, "COMPROBANTE_RECIBIDO", session)
-            elif message_type == 'text':
-                response_text = handle_sales_flow(from_number, contact_name, text_body, session)
-
-        if response_text: 
-            send_whatsapp_message(from_number, {"type": "text", "text": {"body": response_text}})
+            handle_sales_flow(from_number, text_body, session)
             
     except Exception as e:
         logger.error(f"Error en process_message: {e}")
 
-def send_whatsapp_message(to_number, message_data):
-    WHATSAPP_TOKEN = os.environ.get('WHATSAPP_ACCESS_TOKEN')
-    WHATSAPP_API_URL = f"https://graph.facebook.com/v21.0/{os.environ.get('WHATSAPP_PHONE_NUMBER_ID')}/messages"
-    if not WHATSAPP_TOKEN or not WHATSAPP_API_URL:
-        logger.error("Token de WhatsApp o URL de API no configurados.")
-        return
-    headers = {'Authorization': f'Bearer {WHATSAPP_TOKEN}', 'Content-Type': 'application/json'}
-    data = {"messaging_product": "whatsapp", "to": to_number, **message_data}
-    try:
-        response = requests.post(WHATSAPP_API_URL, headers=headers, json=data)
-        response.raise_for_status()
-        logger.info(f"Mensaje enviado a {to_number}")
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error enviando mensaje: {e.response.text if e.response else e}")
-
 @app.route('/')
 def home():
-    return jsonify({'status': 'Bot Daaqui Activo'})
+    return jsonify({'status': 'Bot Daaqui Activo - V2 Firestore'})
 
 if __name__ == '__main__':
     app.run(debug=True)
+
 
