@@ -38,7 +38,7 @@ try:
         rules_doc = db.collection('configuracion').document('reglas_envio').get()
         if rules_doc.exists:
             BUSINESS_RULES = rules_doc.to_dict()
-            logger.info(f"✅ Reglas del negocio cargadas: {BUSINESS_RULES}")
+            logger.warning(f"✅ Reglas del negocio cargadas: {BUSINESS_RULES}") # DEBUG
         else:
             logger.error("❌ Documento de reglas de envío no encontrado en Firestore.")
     else:
@@ -73,7 +73,7 @@ def send_whatsapp_message(to_number, message_data):
     try:
         response = requests.post(url, headers=headers, json=data)
         response.raise_for_status()
-        logger.info(f"Mensaje enviado a {to_number}.")
+        # No logueamos cada mensaje enviado para no saturar los logs
     except requests.exceptions.RequestException as e:
         logger.error(f"Error enviando mensaje a {to_number}: {e.response.text if e.response else e}")
 
@@ -143,7 +143,7 @@ def save_completed_sale_and_customer(session_data):
             "adelanto_recibido": session_data.get('adelanto', 0)
         }
         db.collection('ventas').document(sale_id).set(sale_data)
-        logger.info(f"Venta {sale_id} guardada en Firestore.")
+        logger.warning(f"[DEBUG] Venta {sale_id} guardada en Firestore.")
 
         customer_data = {
             "nombre_perfil_wa": session_data.get('user_name'),
@@ -154,7 +154,7 @@ def save_completed_sale_and_customer(session_data):
             "fecha_ultima_compra": firestore.SERVER_TIMESTAMP
         }
         db.collection('clientes').document(customer_id).set(customer_data, merge=True)
-        logger.info(f"Cliente {customer_id} creado/actualizado.")
+        logger.warning(f"[DEBUG] Cliente {customer_id} creado/actualizado.")
 
         return True, sale_data
     except Exception as e:
@@ -199,7 +199,7 @@ def get_delivery_day_message():
 
 def guardar_pedido_en_sheet(sale_data):
     try:
-        logger.info("[Sheets] Iniciando proceso de guardado...")
+        logger.warning("[DEBUG] [Sheets] Iniciando proceso de guardado...")
         creds_json_str = os.environ.get('GOOGLE_CREDENTIALS_JSON')
         sheet_name = os.environ.get('GOOGLE_SHEET_NAME')
         if not creds_json_str or not sheet_name:
@@ -224,7 +224,7 @@ def guardar_pedido_en_sheet(sale_data):
             sale_data.get('cliente_id', 'N/A')
         ]
         worksheet.append_row(nueva_fila)
-        logger.info(f"[Sheets] ¡ÉXITO! Pedido {sale_data.get('id_venta')} guardado.")
+        logger.warning(f"[DEBUG] [Sheets] ¡ÉXITO! Pedido {sale_data.get('id_venta')} guardado.")
         return True
     except Exception as e:
         logger.error(f"[Sheets] ERROR INESPERADO: {e}")
@@ -266,12 +266,12 @@ def handle_initial_message(from_number, user_name, text):
 # 7. LÓGICA DE LA CONVERSACIÓN - ETAPA 2 (FLUJO DE COMPRA)
 # ==============================================================================
 def handle_sales_flow(from_number, text, session):
-    logger.info(f"[DEBUG] === INICIO TURNO ===")
-    logger.info(f"[DEBUG] Estado actual: {session.get('state')}, Texto recibido: '{text}'")
-    logger.info(f"[DEBUG] Sesión actual: {session}")
+    logger.warning(f"[DEBUG] === INICIO TURNO ===")
+    logger.warning(f"[DEBUG] Estado actual: {session.get('state')}, Texto recibido: '{text}'")
+    logger.warning(f"[DEBUG] Sesión al inicio del turno: {session}")
 
     if any(keyword in text.lower() for keyword in KEYWORDS_GIRASOL) and session.get('state') not in ['awaiting_occasion_response', 'awaiting_purchase_decision']:
-        logger.info(f"[DEBUG] Usuario {from_number} está reiniciando el flujo.")
+        logger.warning(f"[DEBUG] Usuario {from_number} está reiniciando el flujo.")
         delete_session(from_number)
         handle_initial_message(from_number, session.get("user_name", "Usuario"), text)
         return
@@ -336,20 +336,20 @@ def handle_sales_flow(from_number, text, session):
             send_text_message(from_number, "Entendido. Si cambias de opinión, aquí estaré. ¡Que tengas un buen día! 😊")
 
     elif current_state == 'awaiting_upsell_decision':
-        logger.info("[DEBUG] Estado: awaiting_upsell_decision.")
+        logger.warning("[DEBUG] Estado: awaiting_upsell_decision.")
         oferta_upsell = product_data.get('oferta_upsell', {})
         if 'oferta' in text.lower():
-            logger.info("[DEBUG] El cliente eligió la OFERTA.")
+            logger.warning("[DEBUG] El cliente eligió la OFERTA.")
             session['product_name'] = oferta_upsell.get('nombre_producto_oferta', session['product_name'])
             session['product_price'] = float(oferta_upsell.get('precio_oferta', session['product_price']))
-            logger.info(f"[DEBUG] ACTUALIZANDO PRECIO A: {session['product_price']}")
+            logger.warning(f"[DEBUG] ACTUALIZANDO PRECIO A: {session['product_price']}")
             send_text_message(from_number, "¡Genial! Has elegido la oferta. ✨")
         else: 
-            logger.info("[DEBUG] El cliente eligió continuar con 1 producto.")
+            logger.warning("[DEBUG] El cliente eligió continuar con 1 producto.")
             send_text_message(from_number, "¡Perfecto! Continuamos con tu collar individual. ✨")
         
         session['state'] = 'awaiting_location'
-        logger.info(f"[DEBUG] GUARDANDO SESIÓN COMPLETA: {session}")
+        logger.warning(f"[DEBUG] GUARDANDO SESIÓN COMPLETA: {session}")
         save_session(from_number, session)
         
         send_text_message(from_number, "Para empezar a coordinar el envío, por favor, dime: ¿eres de *Lima* o de *provincia*?")
@@ -420,8 +420,13 @@ def handle_sales_flow(from_number, text, session):
     elif current_state in ['awaiting_delivery_details', 'awaiting_shalom_details']:
         session.update({"state": "awaiting_final_confirmation", "detalles_cliente": text})
         save_session(from_number, session)
-        logger.info(f"[DEBUG] Estado: {current_state}. Generando resumen.")
-        logger.info(f"[DEBUG] Datos para el resumen: Precio={session.get('product_price')}, Nombre={session.get('product_name')}")
+        logger.warning(f"[DEBUG] Estado: {current_state}. Generando resumen.")
+        logger.warning(f"[DEBUG] Datos para el resumen: Precio={session.get('product_price')}, Nombre={session.get('product_name')}")
+
+        if session.get('tipo_envio') == 'Lima Contra Entrega':
+            metodo_pago_texto = "Contra Entrega (Efectivo/Yape/Plin)"
+        else:
+            metodo_pago_texto = "Adelanto y saldo por Yape/Plin"
 
         resumen = (
             "¡Gracias! Revisa que todo esté correcto para proceder:\n\n"
@@ -429,7 +434,7 @@ def handle_sales_flow(from_number, text, session):
             f"💎 {session.get('product_name', '')}\n"
             f"💵 Total: S/ {session.get('product_price', 0):.2f}\n"
             f"🚚 Envío: {session.get('distrito', session.get('provincia', ''))} - **¡Totalmente Gratis!**\n"
-            f"💳 **Pago: {session.get('metodo_pago', 'No definido')}**\n\n"
+            f"💳 **Pago: {metodo_pago_texto}**\n\n"
             "**Datos de Entrega:**\n"
             f"{session.get('detalles_cliente', '')}\n\n"
             "¿Confirmas que todo es correcto? (Sí/No)"
@@ -469,12 +474,12 @@ def handle_sales_flow(from_number, text, session):
             send_text_message(from_number, "Entiendo. 😔 Te recomiendo buscar en Google 'Shalom agencias' para encontrar la más cercana para una futura compra. ¡Muchas gracias por tu interés!")
             
     elif current_state == 'awaiting_final_confirmation':
-        logger.info("[DEBUG] Estado: awaiting_final_confirmation.")
+        logger.warning("[DEBUG] Estado: awaiting_final_confirmation.")
         if 'si' in text.lower() or 'sí' in text.lower():
             if session.get('tipo_envio') == 'Lima Contra Entrega':
                 adelanto = float(BUSINESS_RULES.get('adelanto_lima_delivery', 10))
                 session['adelanto'] = adelanto
-                logger.info(f"[DEBUG] Adelanto para Lima calculado: {adelanto}")
+                logger.warning(f"[DEBUG] Adelanto para Lima calculado y añadido a sesión: {adelanto}")
                 save_session(from_number, {"state": "awaiting_lima_payment_agreement"})
                 mensaje = (
                     "¡Perfecto! Como último paso para agendar la ruta del motorizado, solicitamos un adelanto de *S/ {adelanto:.2f}*. "
@@ -486,6 +491,7 @@ def handle_sales_flow(from_number, text, session):
             else: # Shalom
                 adelanto = float(BUSINESS_RULES.get('adelanto_shalom', 20))
                 session['adelanto'] = adelanto
+                logger.warning(f"[DEBUG] Adelanto para Shalom calculado y añadido a sesión: {adelanto}")
                 save_session(from_number, {"state": "awaiting_shalom_payment"})
                 mensaje = (
                     f"¡Genial! Puedes realizar el adelanto de *S/ {adelanto:.2f}* a nuestra cuenta de Yape Empresa:\n\n"
@@ -517,10 +523,10 @@ def handle_sales_flow(from_number, text, session):
             send_text_message(from_number, "Entendido. Si cambias de opinión, aquí estaré. ¡Gracias!")
 
     elif current_state in ['awaiting_lima_payment', 'awaiting_shalom_payment']:
-        logger.info(f"[DEBUG] Estado: {current_state}. Se recibió un mensaje.")
+        logger.warning(f"[DEBUG] Estado: {current_state}. Se recibió un mensaje.")
         if text == "COMPROBANTE_RECIBIDO":
-            logger.info("[DEBUG] Mensaje es COMPROBANTE_RECIBIDO. Procesando venta final.")
-            logger.info(f"[DEBUG] Sesión final antes de guardar: {session}")
+            logger.warning("[DEBUG] Mensaje es COMPROBANTE_RECIBIDO. Procesando venta final.")
+            logger.warning(f"[DEBUG] Sesión final antes de guardar: {session}")
             guardado_exitoso, sale_data = save_completed_sale_and_customer(session)
             if guardado_exitoso:
                 guardar_pedido_en_sheet(sale_data)
