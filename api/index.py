@@ -134,12 +134,13 @@ def save_completed_sale_and_customer(session_data):
             "producto_nombre": session_data.get('product_name'),
             "precio_venta": session_data.get('product_price'),
             "tipo_envio": session_data.get('tipo_envio'),
-            "metodo_pago": session_data.get('metodo_pago'), # DATO NUEVO
+            "metodo_pago": session_data.get('metodo_pago'),
             "provincia": session_data.get('provincia'),
             "distrito": session_data.get('distrito'),
             "detalles_cliente": session_data.get('detalles_cliente'),
             "cliente_id": customer_id,
-            "estado_pedido": "Adelanto Pagado"
+            "estado_pedido": "Adelanto Pagado",
+            "adelanto_recibido": session_data.get('adelanto', 0)
         }
         db.collection('ventas').document(sale_id).set(sale_data)
         logger.info(f"Venta {sale_id} guardada en Firestore.")
@@ -191,9 +192,9 @@ def parse_province_district(text):
 
 def get_delivery_day_message():
     weekday = datetime.now().weekday()
-    if weekday < 5:
+    if weekday < 5: # Lunes a Viernes
         return BUSINESS_RULES.get('mensaje_dia_habil', 'mañana')
-    else:
+    else: # Sábado y Domingo
         return BUSINESS_RULES.get('mensaje_fin_semana', 'el Lunes')
 
 def guardar_pedido_en_sheet(sale_data):
@@ -216,7 +217,7 @@ def guardar_pedido_en_sheet(sale_data):
             sale_data.get('producto_nombre', 'N/A'),
             sale_data.get('precio_venta', 0),
             sale_data.get('tipo_envio', 'N/A'),
-            sale_data.get('metodo_pago', 'N/A'), # DATO NUEVO
+            sale_data.get('metodo_pago', 'N/A'),
             sale_data.get('provincia', 'N/A'),
             sale_data.get('distrito', 'N/A'),
             sale_data.get('detalles_cliente', 'N/A'),
@@ -410,7 +411,7 @@ def handle_sales_flow(from_number, text, session):
     elif current_state in ['awaiting_delivery_details', 'awaiting_shalom_details']:
         session.update({"state": "awaiting_final_confirmation", "detalles_cliente": text})
         save_session(from_number, session)
-        
+
         resumen = (
             "¡Gracias! Revisa que todo esté correcto para proceder:\n\n"
             "**Resumen del Pedido:**\n"
@@ -528,11 +529,11 @@ def handle_sales_flow(from_number, text, session):
                     
                     mensaje_final = (
                         "¡Adelanto confirmado! ✨ Hemos agendado tu pedido.\n\n"
-                        f"*Total del pedido:* S/ {total:.2f}\n"
-                        f"*Adelanto:* - S/ {adelanto:.2f}\n"
+                        f"💸 *Total del pedido:* S/ {total:.2f}\n"
+                        f"✅ *Adelanto:* - S/ {adelanto:.2f}\n"
                         "--------------------\n"
-                        f"*Pagarás al recibir:* **S/ {restante:.2f}**\n\n"
-                        f"Lo estarás recibiendo *{dia_entrega}*, en el rango de *{horario}*.\n\n"
+                        f"💵 *Pagarás al recibir:* **S/ {restante:.2f}**\n\n"
+                        f"🗓️ Lo estarás recibiendo *{dia_entrega}*, en el rango de *{horario}*.\n\n"
                         "Para garantizar una entrega exitosa, te agradecemos asegurar que alguien esté disponible para recibir tu joya.\n\n"
                         "¡Gracias por tu compra en Daaqui Joyas! 🎉"
                     )
@@ -540,7 +541,8 @@ def handle_sales_flow(from_number, text, session):
                 else: # Shalom
                     mensaje_final = (
                         "¡Adelanto confirmado! ✨ Hemos agendado tu pedido.\n\n"
-                        "En las próximas 24 horas hábiles te enviaremos por aquí tu *código de seguimiento* de Shalom. ¡Gracias por tu compra en Daaqui Joyas! 🎉"
+                        "En las próximas 24 horas hábiles te enviaremos por aquí tu *código de seguimiento* de Shalom. 🚚\n\n"
+                        "¡Gracias por tu compra en Daaqui Joyas! 🎉"
                     )
                     send_text_message(from_number, mensaje_final)
                 
