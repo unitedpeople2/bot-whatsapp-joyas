@@ -44,6 +44,8 @@ VERIFY_TOKEN = os.environ.get('WHATSAPP_VERIFY_TOKEN', 'JoyasBot2025!')
 PHONE_NUMBER_ID = os.environ.get('WHATSAPP_PHONE_NUMBER_ID')
 ADMIN_WHATSAPP_NUMBER = os.environ.get('ADMIN_WHATSAPP_NUMBER')
 RUC_EMPRESA = "10700761130" # RUC de la empresa para mensajes de confianza
+KEYWORDS_GIRASOL = ["girasol", "radiant", "precio", "cambia de color"]
+
 
 # ==============================================================================
 # 3. FUNCIONES DE COMUNICACIÓN CON WHATSAPP
@@ -112,8 +114,7 @@ def find_product_by_keywords(text):
         # Simplificación: por ahora, buscamos el producto principal por su ID.
         # En el futuro, esta función puede ser más compleja para buscar por nombre, etc.
         # Basado en tu guion, el producto clave es 'collar-girasol-radiant-01'
-        keywords_girasol = ["girasol", "radiant", "precio", "cambia de color"]
-        if any(keyword in text.lower() for keyword in keywords_girasol):
+        if any(keyword in text.lower() for keyword in KEYWORDS_GIRASOL):
             product_id = "collar-girasol-radiant-01"
             product_ref = db.collection('productos').document(product_id)
             product_doc = product_ref.get()
@@ -171,6 +172,14 @@ def handle_initial_message(from_number, user_name, text):
 # ==============================================================================
 def handle_sales_flow(from_number, text, session):
     """Maneja la conversación de un usuario con una sesión activa."""
+    
+    # NUEVA LÓGICA: Verificar si el usuario quiere reiniciar el flujo.
+    if any(keyword in text.lower() for keyword in KEYWORDS_GIRASOL):
+        logger.info(f"Usuario {from_number} está reiniciando el flujo.")
+        delete_session(from_number)
+        handle_initial_message(from_number, session.get("user_name", "Usuario"), text)
+        return
+
     current_state = session.get('state')
     product_id = session.get('product_id')
 
@@ -283,5 +292,4 @@ def home():
 
 if __name__ == '__main__':
     app.run(debug=True)
-
 
