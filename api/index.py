@@ -176,42 +176,54 @@ def handle_sales_flow(from_number, text, session):
             send_image_message(from_number, url_imagen_empaque)
             time.sleep(2) # Pausa estratégica reducida
 
-        mensaje_persuasion = (
+        # Bloque de mensaje 1: Detalles del producto
+        mensaje_persuasion_1 = (
             "¡Maravillosa elección! ✨ El *Collar Mágico Girasol Radiant* es pura energía. Aquí tienes todos los detalles:\n\n"
             f"💎 *Material:* {material} ¡Hipoalergénico y no se oscurece!\n"
             f"🔮 *La Magia:* Su piedra central es termocromática, cambia de color con tu temperatura.\n"
-            f"🎁 *Presentación:* {presentacion}, ¡lista para sorprender!\n\n"
-            f"Para tu total seguridad, somos Daaqui Joyas, un negocio formal con *RUC {RUC_EMPRESA}*. ¡Tu compra es 100% segura! 🇵🇪\n\n"
-            "¿Te gustaría coordinar tu pedido ahora para asegurar el tuyo?"
+            f"🎁 *Presentación:* {presentacion}, ¡lista para sorprender!"
         )
-        send_text_message(from_number, mensaje_persuasion)
+        send_text_message(from_number, mensaje_persuasion_1)
+        time.sleep(2) # Pausa para dar tiempo de lectura
+
+        # Bloque de mensaje 2: Ancla de confianza y llamada a la acción
+        mensaje_persuasion_2 = (
+            f"Para tu total seguridad, somos Daaqui Joyas, un negocio formal con *RUC {RUC_EMPRESA}*. ¡Tu compra es 100% segura! 🇵🇪\n\n"
+            "¿Te gustaría coordinar tu pedido ahora para asegurar el tuyo? (Sí/No)"
+        )
+        send_text_message(from_number, mensaje_persuasion_2)
         save_session(from_number, {"state": "awaiting_purchase_decision"})
 
     elif current_state == 'awaiting_purchase_decision':
         if 'si' in text.lower() or 'sí' in text.lower():
             url_imagen_upsell = product_data.get('imagenes', {}).get('upsell')
             
-            upsell_message = (
+            # Bloque de mensaje 1: La oferta
+            upsell_message_1 = (
                 "¡Excelente elección! Pero espera, antes de continuar... por haber decidido llevar tu collar, ¡acabas de desbloquear una oferta exclusiva! ✨\n\n"
                 "Añade un *segundo Collar Mágico* a tu pedido y te incluimos de regalo *dos cadenas de diseño italiano* para que combines tus dijes como quieras.\n\n"
                 "En resumen, tu pedido se ampliaría a:\n"
                 "✨ 2 Collares Mágicos\n"
                 "🎁 2 Cadenas de Regalo de diseño\n"
                 "🎀 2 Cajitas de Regalo Premium Daaqui\n"
-                "💎 Todo por un único pago de *S/ 99.00*\n\n"
+                "💎 Todo por un único pago de *S/ 99.00*"
+            )
+            send_text_message(from_number, upsell_message_1)
+            time.sleep(2) # Pausa para dar tiempo de lectura
+
+            # Se envía la imagen de la oferta en medio de los textos
+            if url_imagen_upsell:
+                send_image_message(from_number, url_imagen_upsell)
+                time.sleep(2)
+
+            # Bloque de mensaje 2: Urgencia y llamada a la acción
+            upsell_message_2 = (
                 "*Esta oferta especial es válida solo para los pedidos confirmados hoy.*\n\n"
                 "Para continuar, por favor, respóndeme con una de estas dos palabras:\n"
                 "👉🏽 Escribe *\"oferta\"* para ampliar tu pedido.\n"
                 "👉🏽 Escribe *\"continuar\"* para llevar solo un collar."
             )
-            
-            # CORRECCIÓN DEFINITIVA: Se envía la imagen de la oferta PRIMERO.
-            if url_imagen_upsell:
-                send_image_message(from_number, url_imagen_upsell)
-                time.sleep(2) # Pausa estratégica reducida
-
-            # Luego se envía el texto.
-            send_text_message(from_number, upsell_message)
+            send_text_message(from_number, upsell_message_2)
 
             save_session(from_number, {"state": "awaiting_upsell_decision"})
         else:
