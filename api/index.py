@@ -127,7 +127,7 @@ def handle_initial_message(from_number, user_name, text):
 
         if url_imagen_principal:
             send_image_message(from_number, url_imagen_principal)
-            time.sleep(3) # Pausa estratégica
+            time.sleep(2) # Pausa estratégica reducida
 
         mensaje_inicial = (
             f"¡Hola {user_name}! 🌞 El *{nombre_producto}* {descripcion_corta}\n\n"
@@ -174,7 +174,7 @@ def handle_sales_flow(from_number, text, session):
 
         if url_imagen_empaque:
             send_image_message(from_number, url_imagen_empaque)
-            time.sleep(3) # Pausa estratégica
+            time.sleep(2) # Pausa estratégica reducida
 
         mensaje_persuasion = (
             "¡Maravillosa elección! ✨ El *Collar Mágico Girasol Radiant* es pura energía. Aquí tienes todos los detalles:\n\n"
@@ -205,11 +205,13 @@ def handle_sales_flow(from_number, text, session):
                 "👉🏽 Escribe *\"continuar\"* para llevar solo un collar."
             )
             
-            # Se envía primero el texto y luego, si existe, la imagen de la oferta
-            send_text_message(from_number, upsell_message)
+            # CORRECCIÓN DEFINITIVA: Se envía la imagen de la oferta PRIMERO.
             if url_imagen_upsell:
-                time.sleep(3) # Pausa estratégica
                 send_image_message(from_number, url_imagen_upsell)
+                time.sleep(2) # Pausa estratégica reducida
+
+            # Luego se envía el texto.
+            send_text_message(from_number, upsell_message)
 
             save_session(from_number, {"state": "awaiting_upsell_decision"})
         else:
@@ -279,3 +281,4 @@ def home():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
