@@ -334,10 +334,8 @@ def handle_sales_flow(from_number, text, session):
             send_text_message(from_number, "Entendido. Si cambias de opinión, aquí estaré. ¡Que tengas un buen día! 😊")
 
     elif current_state == 'awaiting_upsell_decision':
-        # ===== INICIO DE LA CORRECCIÓN A PRUEBA DE BALAS =====
         updates_to_session = {'state': 'awaiting_location'}
         oferta_upsell = product_data.get('oferta_upsell', {})
-        
         if 'oferta' in text.lower():
             updates_to_session['product_name'] = oferta_upsell.get('nombre_producto_oferta', session.get('product_name'))
             updates_to_session['product_price'] = float(oferta_upsell.get('precio_oferta', session.get('product_price')))
@@ -346,9 +344,7 @@ def handle_sales_flow(from_number, text, session):
         else: 
             updates_to_session['is_upsell'] = False
             send_text_message(from_number, "¡Perfecto! Continuamos con tu collar individual. ✨")
-        
         save_session(from_number, updates_to_session)
-        # ===== FIN DE LA CORRECCIÓN A PRUEBA DE BALAS =====
         send_text_message(from_number, "Para empezar a coordinar el envío, por favor, dime: ¿eres de *Lima* o de *provincia*?")
 
     elif current_state == 'awaiting_location':
@@ -366,15 +362,12 @@ def handle_sales_flow(from_number, text, session):
     
     elif current_state == 'awaiting_province_district':
         provincia, distrito = parse_province_district(text)
-        adelanto = BUSINESS_RULES.get('adelanto_shalom', 20)
         session.update({
-            "state": "awaiting_shalom_agreement", 
-            "tipo_envio": "Provincia Shalom", 
-            "metodo_pago": "Adelanto y Saldo (Yape/Plin)",
-            "provincia": provincia, 
-            "distrito": distrito
+            "state": "awaiting_shalom_agreement", "tipo_envio": "Provincia Shalom", 
+            "metodo_pago": "Adelanto y Saldo (Yape/Plin)", "provincia": provincia, "distrito": distrito
         })
         save_session(from_number, session)
+        adelanto = BUSINESS_RULES.get('adelanto_shalom', 20)
         mensaje = (
             f"¡Perfecto! Para envíos a *{distrito}*, usamos la agencia *Shalom* para que tu joya llegue de forma segura. ✨\n\n"
             f"Para separar tu producto, requerimos un adelanto de *S/ {adelanto:.2f}*. Este monto funciona como un *compromiso para el recojo del pedido* en la agencia.\n\n"
@@ -388,8 +381,7 @@ def handle_sales_flow(from_number, text, session):
             session['distrito'] = distrito
             if status == 'CON_COBERTURA':
                 session.update({
-                    "state": "awaiting_delivery_details", 
-                    "tipo_envio": "Lima Contra Entrega",
+                    "state": "awaiting_delivery_details", "tipo_envio": "Lima Contra Entrega",
                     "metodo_pago": "Contra Entrega (Efectivo/Yape/Plin)"
                 })
                 save_session(from_number, session)
@@ -400,14 +392,12 @@ def handle_sales_flow(from_number, text, session):
                 )
                 send_text_message(from_number, mensaje.format(distrito=distrito))
             elif status == 'SIN_COBERTURA':
-                adelanto = BUSINESS_RULES.get('adelanto_shalom', 20)
                 session.update({
-                    "state": "awaiting_shalom_agreement", 
-                    "tipo_envio": "Lima Shalom",
-                    "metodo_pago": "Adelanto y Saldo (Yape/Plin)",
-                    "distrito": distrito
+                    "state": "awaiting_shalom_agreement", "tipo_envio": "Lima Shalom",
+                    "metodo_pago": "Adelanto y Saldo (Yape/Plin)", "distrito": distrito
                 })
                 save_session(from_number, session)
+                adelanto = BUSINESS_RULES.get('adelanto_shalom', 20)
                 mensaje = (
                     f"Entendido. Para *{distrito}*, los envíos son por agencia *Shalom* y requieren un adelanto de *S/ {adelanto:.2f}*. Este monto funciona como un *compromiso para el recojo del pedido*.\n\n"
                     "¿Estás de acuerdo? (Sí/No)"
@@ -417,19 +407,22 @@ def handle_sales_flow(from_number, text, session):
             send_text_message(from_number, "No pude reconocer ese distrito. Por favor, intenta escribirlo de nuevo.")
 
     elif current_state in ['awaiting_delivery_details', 'awaiting_shalom_details']:
-        session.update({"state": "awaiting_final_confirmation", "detalles_cliente": text})
-        save_session(from_number, session)
+        # ===== INICIO DE LA CORRECCIÓN BASADA EN TU ANÁLISIS =====
+        session['detalles_cliente'] = text
         
-        final_price = session.get('product_price')
-        # Lógica robusta por si acaso
         if session.get('is_upsell'):
-            final_price = float(product_data.get('oferta_upsell', {}).get('precio_oferta', final_price))
+            oferta_upsell = product_data.get('oferta_upsell', {})
+            session['product_price'] = float(oferta_upsell.get('precio_oferta', session.get('product_price')))
         
+        session['state'] = 'awaiting_final_confirmation'
+        save_session(from_number, session)
+        # ===== FIN DE LA CORRECCIÓN =====
+
         resumen = (
             "¡Gracias! Revisa que todo esté correcto para proceder:\n\n"
             "**Resumen del Pedido:**\n"
             f"💎 {session.get('product_name', '')}\n"
-            f"💵 Total: S/ {final_price:.2f}\n"
+            f"💵 Total: S/ {session.get('product_price', 0):.2f}\n"
             f"🚚 Envío: {session.get('distrito', session.get('provincia', ''))} - **¡Totalmente Gratis!**\n"
             f"💳 **Pago: {session.get('metodo_pago', 'No definido')}**\n\n"
             "**Datos de Entrega:**\n"
@@ -525,7 +518,7 @@ def handle_sales_flow(from_number, text, session):
 
     elif current_state in ['awaiting_lima_payment', 'awaiting_shalom_payment']:
         if text == "COMPROBANTE_RECIBIDO":
-            guardado_exitoso, sale_data = save_completed_sale_and_customer(session, product_data)
+            guardado_exitoso, sale_data = save_completed_sale_and_customer(session)
             if guardado_exitoso:
                 guardar_pedido_en_sheet(sale_data)
                 
