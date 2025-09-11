@@ -190,9 +190,9 @@ def parse_province_district(text):
 
 def get_delivery_day_message():
     weekday = datetime.now().weekday()
-    if weekday < 5: # Lunes a Viernes
+    if weekday < 5:
         return BUSINESS_RULES.get('mensaje_dia_habil', 'mañana')
-    else: # Sábado y Domingo
+    else:
         return BUSINESS_RULES.get('mensaje_fin_semana', 'el Lunes')
 
 def guardar_pedido_en_sheet(sale_data):
@@ -321,7 +321,8 @@ def handle_sales_flow(from_number, text, session):
                 send_text_message(from_number, upsell_message_2)
                 save_session(from_number, {"state": "awaiting_upsell_decision"})
             else:
-                save_session(from_number, {"state": "awaiting_location"})
+                session['state'] = 'awaiting_location'
+                save_session(from_number, session)
                 send_text_message(from_number, "¡Perfecto! Para empezar a coordinar el envío, por favor, dime: ¿eres de *Lima* o de *provincia*?")
         else:
             delete_session(from_number)
@@ -335,13 +336,17 @@ def handle_sales_flow(from_number, text, session):
             send_text_message(from_number, "¡Genial! Has elegido la oferta. ✨")
         else: 
             send_text_message(from_number, "¡Perfecto! Continuamos con tu collar individual. ✨")
-        save_session(from_number, {"state": "awaiting_location"})
+        
+        session['state'] = 'awaiting_location'
+        save_session(from_number, session)
+        
         send_text_message(from_number, "Para empezar a coordinar el envío, por favor, dime: ¿eres de *Lima* o de *provincia*?")
 
     elif current_state == 'awaiting_location':
         texto_limpio = text.lower()
         if 'lima' in texto_limpio:
-            save_session(from_number, {"state": "awaiting_lima_district", "provincia": "Lima"})
+            session.update({"state": "awaiting_lima_district", "provincia": "Lima"})
+            save_session(from_number, session)
             send_text_message(from_number, "¡Genial! ✨ Para saber qué tipo de envío te corresponde, por favor, dime: ¿en qué distrito te encuentras? 📍")
         elif 'provincia' in texto_limpio:
             save_session(from_number, {"state": "awaiting_province_district"})
@@ -392,7 +397,7 @@ def handle_sales_flow(from_number, text, session):
         resumen = (
             "¡Gracias! Revisa que todo esté correcto para proceder:\n\n"
             "*Resumen del Pedido:*\n"
-            f"💎 1x {session.get('product_name', '')}\n"
+            f"💎 {session.get('product_name', '')}\n"
             f"💵 Total: S/ {session.get('product_price', 0):.2f}\n"
             f"🚚 Envío: {session.get('distrito', session.get('provincia', ''))}\n\n"
             "*Datos de Entrega:*\n"
@@ -485,7 +490,6 @@ def handle_sales_flow(from_number, text, session):
             if guardado_exitoso:
                 guardar_pedido_en_sheet(sale_data)
                 
-                # Notificación al administrador
                 if ADMIN_WHATSAPP_NUMBER:
                     admin_message = (
                         f"🎉 ¡Nueva Venta Confirmada! 🎉\n\n"
@@ -497,7 +501,6 @@ def handle_sales_flow(from_number, text, session):
                     )
                     send_text_message(ADMIN_WHATSAPP_NUMBER, admin_message)
 
-                # Mensaje de confirmación al cliente
                 if session.get('tipo_envio') == 'Lima Contra Entrega':
                     total = session.get('product_price', 0)
                     adelanto = session.get('adelanto', 0)
