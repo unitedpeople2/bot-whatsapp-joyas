@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # ==========================================================
 # 1. IMPORTACIONES Y CONFIGURACIÓN INICIAL
 # ==========================================================
@@ -189,9 +190,9 @@ def parse_province_district(text):
 
 def get_delivery_day_message():
     weekday = datetime.now().weekday()
-    if weekday < 5:
+    if weekday < 5: # Lunes a Viernes
         return BUSINESS_RULES.get('mensaje_dia_habil', 'mañana')
-    else:
+    else: # Sábado y Domingo
         return BUSINESS_RULES.get('mensaje_fin_semana', 'el Lunes')
 
 def guardar_pedido_en_sheet(sale_data):
@@ -282,8 +283,6 @@ def handle_sales_flow(from_number, text, session):
         return
     product_data = product_doc.to_dict()
 
-    # --- Flujo de venta principal ---
-
     if current_state == 'awaiting_occasion_response':
         url_imagen_empaque = product_data.get('imagenes', {}).get('empaque')
         detalles = product_data.get('detalles', {})
@@ -364,40 +363,51 @@ def handle_sales_flow(from_number, text, session):
         
     elif current_state == 'awaiting_lima_district':
         distrito, status = normalize_and_check_district(text)
-        session['distrito'] = distrito
-        if status == 'CON_COBERTURA':
-            session.update({"state": "awaiting_delivery_details", "tipo_envio": "Lima Contra Entrega"})
-            save_session(from_number, session)
-            mensaje = (
-                f"¡Excelente! Tenemos cobertura en *{distrito}*. 🏙️\n\n"
-                "Para registrar tu pedido, por favor, envíame en *un solo mensaje* tu *Nombre Completo*, *Dirección exacta* y una *Referencia* (muy importante para el motorizado).\n\n"
-                "📝 *Ej: Ana Pérez, Jr. Gamarra 123, Depto 501, La Victoria. Al lado de la farmacia Inkafarma.*"
-            )
-            send_text_message(from_number, mensaje)
-        elif status == 'SIN_COBERTURA':
-            adelanto = BUSINESS_RULES.get('adelanto_shalom', 20)
-            session.update({"state": "awaiting_shalom_agreement", "tipo_envio": "Lima Shalom"})
-            save_session(from_number, session)
-            mensaje = (
-                f"Entendido. Para *{distrito}*, los envíos son por agencia *Shalom* y requieren un adelanto de *S/ {adelanto:.2f}*. Este monto funciona como un *compromiso para el recojo del pedido*.\n\n"
-                "¿Estás de acuerdo? (Sí/No)"
-            )
-            send_text_message(from_number, mensaje)
+        if status != 'NO_ENCONTRADO':
+            session['distrito'] = distrito
+            if status == 'CON_COBERTURA':
+                session.update({"state": "awaiting_delivery_details", "tipo_envio": "Lima Contra Entrega"})
+                save_session(from_number, session)
+                mensaje = (
+                    "¡Excelente! Tenemos cobertura en *{distrito}*. 🏙️\n\n"
+                    "Para registrar tu pedido, por favor, envíame en *un solo mensaje* tu *Nombre Completo*, *Dirección exacta* y una *Referencia* (muy importante para el motorizado).\n\n"
+                    "📝 *Ej: Ana Pérez, Jr. Gamarra 123, Depto 501, La Victoria. Al lado de la farmacia Inkafarma.*"
+                )
+                send_text_message(from_number, mensaje.format(distrito=distrito))
+            elif status == 'SIN_COBERTURA':
+                adelanto = BUSINESS_RULES.get('adelanto_shalom', 20)
+                session.update({"state": "awaiting_shalom_agreement", "tipo_envio": "Lima Shalom"})
+                save_session(from_number, session)
+                mensaje = (
+                    f"Entendido. Para *{distrito}*, los envíos son por agencia *Shalom* y requieren un adelanto de *S/ {adelanto:.2f}*. Este monto funciona como un *compromiso para el recojo del pedido*.\n\n"
+                    "¿Estás de acuerdo? (Sí/No)"
+                )
+                send_text_message(from_number, mensaje)
         else:
             send_text_message(from_number, "No pude reconocer ese distrito. Por favor, intenta escribirlo de nuevo.")
 
-    elif current_state == 'awaiting_delivery_details':
+    elif current_state in ['awaiting_delivery_details', 'awaiting_shalom_details']:
         session.update({"state": "awaiting_final_confirmation", "detalles_cliente": text})
         save_session(from_number, session)
-        # Código para mostrar resumen y pedir confirmación
-        
+        resumen = (
+            "¡Gracias! Revisa que todo esté correcto para proceder:\n\n"
+            "*Resumen del Pedido:*\n"
+            f"💎 1x {session.get('product_name', '')}\n"
+            f"💵 Total: S/ {session.get('product_price', 0):.2f}\n"
+            f"🚚 Envío: {session.get('distrito', session.get('provincia', ''))}\n\n"
+            "*Datos de Entrega:*\n"
+            f"{session.get('detalles_cliente', '')}\n\n"
+            "¿Confirmas que todo es correcto? (Sí/No)"
+        )
+        send_text_message(from_number, resumen)
+
     elif current_state == 'awaiting_shalom_agreement':
         if 'si' in text.lower() or 'sí' in text.lower():
             save_session(from_number, {"state": "awaiting_shalom_experience"})
             send_text_message(from_number, "¡Genial! Para hacer el proceso más fácil, cuéntame, ¿alguna vez has recogido un pedido en una agencia Shalom? (Sí/No)")
         else:
             delete_session(from_number)
-            send_text_message(from_number, "Entendido. Si cambias de opinión, aquí estaremos. ¡Gracias! 😊")
+            send_text_message(from_number, "Comprendo. Si cambias de opinión, aquí estaré. ¡Gracias! 😊")
 
     elif current_state == 'awaiting_shalom_experience':
         if 'si' in text.lower() or 'sí' in text.lower():
@@ -408,8 +418,8 @@ def handle_sales_flow(from_number, text, session):
             mensaje_explicacion = (
                 "¡No te preocupes, para eso estoy! 🙋🏽‍♀️ Te explico, es súper sencillo:\n\n"
                 "🚚 *Shalom* es una empresa de envíos muy confiable. Te damos un *código de seguimiento* para que sepas cuándo llega.\n"
-                "📲 Una vez que llegue a la agencia, solo tienes que *yapearnos el saldo restante*.\n"
-                "🔑 Apenas nos confirmes, te enviaremos la *clave secreta de recojo*.\n"
+                "📲 Una vez que tu pedido llegue a la agencia, solo tienes que *yapearnos el saldo restante*.\n"
+                "🔑 Apenas nos confirmes el pago, te enviaremos la *clave secreta de recojo*.\n"
                 "¡Con esa clave y tu DNI, la joya es tuya! Es un método 100% seguro. 🔒\n\n"
                 "Para poder hacer el envío, ¿conoces la dirección de alguna agencia Shalom que te quede cerca? (Sí/No)"
             )
@@ -422,33 +432,103 @@ def handle_sales_flow(from_number, text, session):
         else:
             delete_session(from_number)
             send_text_message(from_number, "Entiendo. 😔 Te recomiendo buscar en Google 'Shalom agencias' para encontrar la más cercana para una futura compra. ¡Muchas gracias por tu interés!")
-
-    elif current_state in ['awaiting_delivery_details', 'awaiting_shalom_details']:
-        session.update({"state": "awaiting_final_confirmation", "detalles_cliente": text})
-        save_session(from_number, session)
-        # Mostrar resumen y pedir confirmación
-        
+            
     elif current_state == 'awaiting_final_confirmation':
         if 'si' in text.lower() or 'sí' in text.lower():
             if session.get('tipo_envio') == 'Lima Contra Entrega':
-                adelanto = BUSINESS_RULES.get('adelanto_lima_delivery', 10)
-                # ... Lógica para pedir adelanto y luego pago
+                adelanto = float(BUSINESS_RULES.get('adelanto_lima_delivery', 10))
+                session['adelanto'] = adelanto
+                save_session(from_number, {"state": "awaiting_lima_payment_agreement"})
+                mensaje = (
+                    "¡Perfecto! Como último paso para agendar la ruta del motorizado, solicitamos un adelanto de *S/ {adelanto:.2f}*. "
+                    "Esto nos ayuda a confirmar el *compromiso de recojo* del pedido.\n\n"
+                    "El monto se descuenta del total que pagarás al recibir.\n\n"
+                    "¿Procedemos con la confirmación? (Sí/No)"
+                ).format(adelanto=adelanto)
+                send_text_message(from_number, mensaje)
             else: # Shalom
-                adelanto = BUSINESS_RULES.get('adelanto_shalom', 20)
-                # ... Lógica para pedir adelanto y luego pago
+                adelanto = float(BUSINESS_RULES.get('adelanto_shalom', 20))
+                session['adelanto'] = adelanto
+                save_session(from_number, {"state": "awaiting_shalom_payment"})
+                mensaje = (
+                    f"¡Genial! Puedes realizar el adelanto de *S/ {adelanto:.2f}* a nuestra cuenta de Yape Empresa:\n\n"
+                    f"💳 *YAPE:* {BUSINESS_RULES.get('yape_numero', 'No configurado')}\n"
+                    f"👤 *Titular:* {TITULAR_YAPE}\n\n"
+                    f"Tu compra es 100% segura. 🔒 Somos un negocio formal con *RUC {RUC_EMPRESA}*.\n\n"
+                    "Una vez realizado, por favor, envíame la *captura de pantalla* para validar tu pedido."
+                )
+                send_text_message(from_number, mensaje)
         else:
-            # Lógica para corregir datos
-            
-    elif current_state == 'awaiting_payment_proof':
-        # Lógica final para confirmar pedido
-        guardado_exitoso, sale_data = save_completed_sale_and_customer(session)
-        if guardado_exitoso:
-            guardar_pedido_en_sheet(sale_data)
-            # ... Enviar mensaje de confirmación final
-            delete_session(from_number)
-        else:
-            send_text_message(from_number, "Hubo un error al procesar tu pedido. Un asesor se pondrá en contacto contigo.")
+            previous_state = 'awaiting_delivery_details' if session.get('tipo_envio') == 'Lima Contra Entrega' else 'awaiting_shalom_details'
+            save_session(from_number, {'state': previous_state})
+            send_text_message(from_number, "¡Claro que sí, lo corregimos! 😊 Para asegurar que no haya ningún error, por favor, envíame nuevamente la información de envío completa en *un solo mensaje*.")
 
+    elif current_state == 'awaiting_lima_payment_agreement':
+        if 'si' in text.lower() or 'sí' in text.lower():
+            adelanto = session.get('adelanto', 10)
+            save_session(from_number, {"state": "awaiting_lima_payment"})
+            mensaje = (
+                f"¡Genial! Puedes realizar el adelanto de *S/ {adelanto:.2f}* a nuestra cuenta de Yape Empresa:\n\n"
+                f"💳 *YAPE:* {BUSINESS_RULES.get('yape_numero', 'No configurado')}\n"
+                f"👤 *Titular:* {TITULAR_YAPE}\n\n"
+                f"Tu compra es 100% segura. 🔒 Somos un negocio formal con *RUC {RUC_EMPRESA}*.\n\n"
+                "Una vez realizado, por favor, envíame la *captura de pantalla* para validar tu pedido."
+            )
+            send_text_message(from_number, mensaje)
+        else:
+            delete_session(from_number)
+            send_text_message(from_number, "Entendido. Si cambias de opinión, aquí estaré. ¡Gracias!")
+
+    elif current_state in ['awaiting_lima_payment', 'awaiting_shalom_payment']:
+        if text == "COMPROBANTE_RECIBIDO":
+            guardado_exitoso, sale_data = save_completed_sale_and_customer(session)
+            if guardado_exitoso:
+                guardar_pedido_en_sheet(sale_data)
+                
+                # Notificación al administrador
+                if ADMIN_WHATSAPP_NUMBER:
+                    admin_message = (
+                        f"🎉 ¡Nueva Venta Confirmada! 🎉\n\n"
+                        f"Producto: {sale_data.get('producto_nombre')}\n"
+                        f"Precio: S/ {sale_data.get('precio_venta'):.2f}\n"
+                        f"Tipo: {sale_data.get('tipo_envio')}\n"
+                        f"Cliente WA ID: {sale_data.get('cliente_id')}\n"
+                        f"Detalles:\n{sale_data.get('detalles_cliente')}"
+                    )
+                    send_text_message(ADMIN_WHATSAPP_NUMBER, admin_message)
+
+                # Mensaje de confirmación al cliente
+                if session.get('tipo_envio') == 'Lima Contra Entrega':
+                    total = session.get('product_price', 0)
+                    adelanto = session.get('adelanto', 0)
+                    restante = total - adelanto
+                    dia_entrega = get_delivery_day_message()
+                    horario = BUSINESS_RULES.get('horario_entrega_lima', 'durante el día')
+                    
+                    mensaje_final = (
+                        "¡Adelanto confirmado! ✨ Hemos agendado tu pedido.\n\n"
+                        f"*Total del pedido:* S/ {total:.2f}\n"
+                        f"*Adelanto:* - S/ {adelanto:.2f}\n"
+                        "--------------------\n"
+                        f"*Pagarás al recibir:* **S/ {restante:.2f}**\n\n"
+                        f"Lo estarás recibiendo *{dia_entrega}*, en el rango de *{horario}*.\n\n"
+                        "Para garantizar una entrega exitosa, te agradecemos asegurar que alguien esté disponible para recibir tu joya.\n\n"
+                        "¡Gracias por tu compra en Daaqui Joyas! 🎉"
+                    )
+                    send_text_message(from_number, mensaje_final)
+                else: # Shalom
+                    mensaje_final = (
+                        "¡Adelanto confirmado! ✨ Hemos agendado tu pedido.\n\n"
+                        "En las próximas 24 horas hábiles te enviaremos por aquí tu *código de seguimiento* de Shalom. ¡Gracias por tu compra en Daaqui Joyas! 🎉"
+                    )
+                    send_text_message(from_number, mensaje_final)
+                
+                delete_session(from_number)
+            else:
+                send_text_message(from_number, "¡Uy! Hubo un problema al registrar tu pedido. Un asesor se pondrá en contacto contigo pronto.")
+        else:
+            send_text_message(from_number, "Estoy esperando la captura de pantalla de tu pago. 😊")
+            
     else:
         send_text_message(from_number, "Estoy un poco confundido. Si deseas reiniciar, escribe 'cancelar'.")
 
@@ -487,7 +567,7 @@ def process_message(message, contacts):
         if message_type == 'text':
             text_body = message.get('text', {}).get('body', '')
         elif message_type == 'image':
-            text_body = "COMPROBANTE_PAGO" # Identificador para la lógica
+            text_body = "COMPROBANTE_RECIBIDO"
         else:
             send_text_message(from_number, "Por ahora solo puedo procesar mensajes de texto e imágenes de comprobantes. 😊")
             return
@@ -495,22 +575,16 @@ def process_message(message, contacts):
         logger.info(f"Procesando de {user_name} ({from_number}): '{text_body}'")
 
         if text_body.lower() in PALABRAS_CANCELACION:
-            delete_session(from_number)
-            send_text_message(from_number, "Hecho. He cancelado el proceso actual. Si necesitas algo más, no dudes en escribirme. 😊")
+            if get_session(from_number):
+                delete_session(from_number)
+                send_text_message(from_number, "Hecho. He cancelado el proceso actual. Si necesitas algo más, no dudes en escribirme. 😊")
             return
 
         session = get_session(from_number)
         if not session:
             handle_initial_message(from_number, user_name, text_body)
         else:
-            # Manejar comprobante de pago
-            if session.get('state') in ['awaiting_lima_payment', 'awaiting_shalom_payment'] and text_body == "COMPROBANTE_PAGO":
-                 handle_sales_flow(from_number, "COMPROBANTE_RECIBIDO", session)
-            elif message_type == 'text':
-                handle_sales_flow(from_number, text_body, session)
-            else:
-                send_text_message(from_number, "Recibí tu imagen, pero solo la procesaré si estoy esperando un comprobante de pago.")
-
+            handle_sales_flow(from_number, text_body, session)
     except Exception as e:
         logger.error(f"Error en process_message: {e}")
 
