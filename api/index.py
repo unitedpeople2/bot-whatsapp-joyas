@@ -126,9 +126,9 @@ def save_completed_sale_and_customer(session_data):
         sale_id = str(uuid.uuid4())
         customer_id = session_data.get('whatsapp_id')
         
-        # Preparar datos para la venta
         sale_data = {
             "fecha": firestore.SERVER_TIMESTAMP,
+            "id_venta": sale_id,
             "producto_id": session_data.get('product_id'),
             "producto_nombre": session_data.get('product_name'),
             "precio_venta": session_data.get('product_price'),
@@ -137,12 +137,11 @@ def save_completed_sale_and_customer(session_data):
             "distrito": session_data.get('distrito'),
             "detalles_cliente": session_data.get('detalles_cliente'),
             "cliente_id": customer_id,
-            "estado_pedido": "Pagado"
+            "estado_pedido": "Adelanto Pagado"
         }
         db.collection('ventas').document(sale_id).set(sale_data)
         logger.info(f"Venta {sale_id} guardada en Firestore.")
 
-        # Preparar y guardar/actualizar datos del cliente
         customer_data = {
             "nombre_perfil_wa": session_data.get('user_name'),
             "provincia_ultimo_envio": session_data.get('provincia'),
@@ -154,7 +153,7 @@ def save_completed_sale_and_customer(session_data):
         db.collection('clientes').document(customer_id).set(customer_data, merge=True)
         logger.info(f"Cliente {customer_id} creado/actualizado.")
 
-        return True, sale_id
+        return True, sale_data
     except Exception as e:
         logger.error(f"Error guardando venta y cliente en Firestore: {e}")
         return False, None
@@ -190,12 +189,12 @@ def parse_province_district(text):
 
 def get_delivery_day_message():
     weekday = datetime.now().weekday()
-    if weekday < 5: # Lunes a Viernes
+    if weekday < 5:
         return BUSINESS_RULES.get('mensaje_dia_habil', 'mañana')
-    else: # Sábado y Domingo
+    else:
         return BUSINESS_RULES.get('mensaje_fin_semana', 'el Lunes')
 
-def guardar_pedido_en_sheet(sale_data, sale_id):
+def guardar_pedido_en_sheet(sale_data):
     try:
         logger.info("[Sheets] Iniciando proceso de guardado...")
         creds_json_str = os.environ.get('GOOGLE_CREDENTIALS_JSON')
@@ -211,9 +210,9 @@ def guardar_pedido_en_sheet(sale_data, sale_id):
         
         nueva_fila = [
             datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-            sale_id,
+            sale_data.get('id_venta', 'N/A'),
             sale_data.get('producto_nombre', 'N/A'),
-            sale_data.get('precio_venta', 'N/A'),
+            sale_data.get('precio_venta', 0),
             sale_data.get('tipo_envio', 'N/A'),
             sale_data.get('provincia', 'N/A'),
             sale_data.get('distrito', 'N/A'),
@@ -221,7 +220,7 @@ def guardar_pedido_en_sheet(sale_data, sale_id):
             sale_data.get('cliente_id', 'N/A')
         ]
         worksheet.append_row(nueva_fila)
-        logger.info(f"[Sheets] ¡ÉXITO! Pedido {sale_id} guardado.")
+        logger.info(f"[Sheets] ¡ÉXITO! Pedido {sale_data.get('id_venta')} guardado.")
         return True
     except Exception as e:
         logger.error(f"[Sheets] ERROR INESPERADO: {e}")
@@ -252,7 +251,7 @@ def handle_initial_message(from_number, user_name, text):
 
         new_session = {
             "state": "awaiting_occasion_response", "product_id": product_id,
-            "product_name": nombre_producto, "product_price": precio,
+            "product_name": nombre_producto, "product_price": float(precio),
             "user_name": user_name, "whatsapp_id": from_number
         }
         save_session(from_number, new_session)
@@ -263,7 +262,7 @@ def handle_initial_message(from_number, user_name, text):
 # 7. LÓGICA DE LA CONVERSACIÓN - ETAPA 2 (FLUJO DE COMPRA)
 # ==============================================================================
 def handle_sales_flow(from_number, text, session):
-    if any(keyword in text.lower() for keyword in KEYWORDS_GIRASOL) and session.get('state') != 'awaiting_occasion_response':
+    if any(keyword in text.lower() for keyword in KEYWORDS_GIRASOL) and session.get('state') not in ['awaiting_occasion_response', 'awaiting_purchase_decision']:
         logger.info(f"Usuario {from_number} está reiniciando el flujo.")
         delete_session(from_number)
         handle_initial_message(from_number, session.get("user_name", "Usuario"), text)
@@ -286,14 +285,41 @@ def handle_sales_flow(from_number, text, session):
     # --- Flujo de venta principal ---
 
     if current_state == 'awaiting_occasion_response':
-        # ... (código para enviar el segundo mensaje de persuasión)
+        url_imagen_empaque = product_data.get('imagenes', {}).get('empaque')
+        detalles = product_data.get('detalles', {})
+        material = detalles.get('material', 'material de alta calidad')
+        presentacion = detalles.get('empaque', 'viene en una hermosa caja de regalo')
+        if url_imagen_empaque:
+            send_image_message(from_number, url_imagen_empaque)
+            time.sleep(2)
+        mensaje_persuasion_1 = (
+            "¡Maravillosa elección! ✨ El *Collar Mágico Girasol Radiant* es pura energía. Aquí tienes todos los detalles:\n\n"
+            f"💎 *Material:* {material} ¡Hipoalergénico y no se oscurece!\n"
+            f"🔮 *La Magia:* Su piedra central es termocromática, cambia de color con tu temperatura.\n"
+            f"🎁 *Presentación:* {presentacion}, ¡lista para sorprender!"
+        )
+        send_text_message(from_number, mensaje_persuasion_1)
+        time.sleep(2)
+        mensaje_persuasion_2 = (
+            f"Para tu total seguridad, somos Daaqui Joyas, un negocio formal con *RUC {RUC_EMPRESA}*. ¡Tu compra es 100% segura! 🇵🇪\n\n"
+            "¿Te gustaría coordinar tu pedido ahora para asegurar el tuyo? (Sí/No)"
+        )
+        send_text_message(from_number, mensaje_persuasion_2)
         save_session(from_number, {"state": "awaiting_purchase_decision"})
     
     elif current_state == 'awaiting_purchase_decision':
         if 'si' in text.lower() or 'sí' in text.lower():
             oferta_upsell = product_data.get('oferta_upsell')
             if oferta_upsell and oferta_upsell.get('activo'):
-                # ... (código para enviar el upsell)
+                url_imagen_upsell = product_data.get('imagenes', {}).get('upsell')
+                if url_imagen_upsell:
+                    send_image_message(from_number, url_imagen_upsell)
+                    time.sleep(2)
+                upsell_message_1 = oferta_upsell.get('bloque_texto_1', '').replace('\\n', '\n')
+                send_text_message(from_number, upsell_message_1)
+                time.sleep(2)
+                upsell_message_2 = oferta_upsell.get('bloque_texto_2', '').replace('\\n', '\n')
+                send_text_message(from_number, upsell_message_2)
                 save_session(from_number, {"state": "awaiting_upsell_decision"})
             else:
                 save_session(from_number, {"state": "awaiting_location"})
@@ -306,7 +332,7 @@ def handle_sales_flow(from_number, text, session):
         oferta_upsell = product_data.get('oferta_upsell', {})
         if 'oferta' in text.lower():
             session['product_name'] = oferta_upsell.get('nombre_producto_oferta', session['product_name'])
-            session['product_price'] = oferta_upsell.get('precio_oferta', session['product_price'])
+            session['product_price'] = float(oferta_upsell.get('precio_oferta', session['product_price']))
             send_text_message(from_number, "¡Genial! Has elegido la oferta. ✨")
         else: 
             send_text_message(from_number, "¡Perfecto! Continuamos con tu collar individual. ✨")
@@ -314,29 +340,114 @@ def handle_sales_flow(from_number, text, session):
         send_text_message(from_number, "Para empezar a coordinar el envío, por favor, dime: ¿eres de *Lima* o de *provincia*?")
 
     elif current_state == 'awaiting_location':
-        # ... (código para manejar Lima/Provincia)
-        
+        texto_limpio = text.lower()
+        if 'lima' in texto_limpio:
+            save_session(from_number, {"state": "awaiting_lima_district", "provincia": "Lima"})
+            send_text_message(from_number, "¡Genial! ✨ Para saber qué tipo de envío te corresponde, por favor, dime: ¿en qué distrito te encuentras? 📍")
+        elif 'provincia' in texto_limpio:
+            save_session(from_number, {"state": "awaiting_province_district"})
+            send_text_message(from_number, "¡Entendido! Para continuar, por favor, indícame tu *provincia y distrito*. ✍🏽\n\n📝 Ej: Arequipa, Arequipa")
+        else:
+            send_text_message(from_number, "No te entendí bien. Por favor, dime si tu envío es para *Lima* o para *provincia*.")
+    
     elif current_state == 'awaiting_province_district':
         provincia, distrito = parse_province_district(text)
+        adelanto = BUSINESS_RULES.get('adelanto_shalom', 20)
         session.update({"state": "awaiting_shalom_agreement", "tipo_envio": "Provincia Shalom", "provincia": provincia, "distrito": distrito})
-        # ... (código para justificar y pedir adelanto de Shalom)
-
+        save_session(from_number, session)
+        mensaje = (
+            f"¡Perfecto! Para envíos a *{distrito}*, usamos la agencia *Shalom* para que tu joya llegue de forma segura. ✨\n\n"
+            f"Para separar tu producto, requerimos un adelanto de *S/ {adelanto:.2f}*. Este monto funciona como un *compromiso para el recojo del pedido* en la agencia.\n\n"
+            "¿Estás de acuerdo para continuar? (Sí/No)"
+        )
+        send_text_message(from_number, mensaje)
+        
     elif current_state == 'awaiting_lima_district':
         distrito, status = normalize_and_check_district(text)
+        session['distrito'] = distrito
         if status == 'CON_COBERTURA':
-            session.update({"state": "awaiting_delivery_details", "tipo_envio": "Lima Contra Entrega", "provincia": "Lima", "distrito": distrito})
-            # ... (código para pedir detalles de Lima Contra Entrega)
+            session.update({"state": "awaiting_delivery_details", "tipo_envio": "Lima Contra Entrega"})
+            save_session(from_number, session)
+            mensaje = (
+                f"¡Excelente! Tenemos cobertura en *{distrito}*. 🏙️\n\n"
+                "Para registrar tu pedido, por favor, envíame en *un solo mensaje* tu *Nombre Completo*, *Dirección exacta* y una *Referencia* (muy importante para el motorizado).\n\n"
+                "📝 *Ej: Ana Pérez, Jr. Gamarra 123, Depto 501, La Victoria. Al lado de la farmacia Inkafarma.*"
+            )
+            send_text_message(from_number, mensaje)
         elif status == 'SIN_COBERTURA':
-            session.update({"state": "awaiting_shalom_agreement", "tipo_envio": "Lima Shalom", "provincia": "Lima", "distrito": distrito})
-            # ... (código para justificar y pedir adelanto de Shalom)
+            adelanto = BUSINESS_RULES.get('adelanto_shalom', 20)
+            session.update({"state": "awaiting_shalom_agreement", "tipo_envio": "Lima Shalom"})
+            save_session(from_number, session)
+            mensaje = (
+                f"Entendido. Para *{distrito}*, los envíos son por agencia *Shalom* y requieren un adelanto de *S/ {adelanto:.2f}*. Este monto funciona como un *compromiso para el recojo del pedido*.\n\n"
+                "¿Estás de acuerdo? (Sí/No)"
+            )
+            send_text_message(from_number, mensaje)
         else:
             send_text_message(from_number, "No pude reconocer ese distrito. Por favor, intenta escribirlo de nuevo.")
 
-    # ... (Resto de los estados: awaiting_shalom_agreement, awaiting_shalom_experience, awaiting_delivery_details, awaiting_final_confirmation, awaiting_payment_proof)
-    # En el estado final (awaiting_payment_proof), se llamarían a las funciones:
-    # save_completed_sale_and_customer(session)
-    # guardar_pedido_en_sheet(session_data_para_sheet, sale_id)
-    # delete_session(from_number)
+    elif current_state == 'awaiting_delivery_details':
+        session.update({"state": "awaiting_final_confirmation", "detalles_cliente": text})
+        save_session(from_number, session)
+        # Código para mostrar resumen y pedir confirmación
+        
+    elif current_state == 'awaiting_shalom_agreement':
+        if 'si' in text.lower() or 'sí' in text.lower():
+            save_session(from_number, {"state": "awaiting_shalom_experience"})
+            send_text_message(from_number, "¡Genial! Para hacer el proceso más fácil, cuéntame, ¿alguna vez has recogido un pedido en una agencia Shalom? (Sí/No)")
+        else:
+            delete_session(from_number)
+            send_text_message(from_number, "Entendido. Si cambias de opinión, aquí estaremos. ¡Gracias! 😊")
+
+    elif current_state == 'awaiting_shalom_experience':
+        if 'si' in text.lower() or 'sí' in text.lower():
+            save_session(from_number, {"state": "awaiting_shalom_details"})
+            send_text_message(from_number, "¡Excelente! Entonces ya conoces el proceso. Para terminar, bríndame en un solo mensaje tu *Nombre Completo*, *DNI* y la *dirección exacta de la agencia Shalom*.")
+        else:
+            save_session(from_number, {"state": "awaiting_shalom_agency_knowledge"})
+            mensaje_explicacion = (
+                "¡No te preocupes, para eso estoy! 🙋🏽‍♀️ Te explico, es súper sencillo:\n\n"
+                "🚚 *Shalom* es una empresa de envíos muy confiable. Te damos un *código de seguimiento* para que sepas cuándo llega.\n"
+                "📲 Una vez que llegue a la agencia, solo tienes que *yapearnos el saldo restante*.\n"
+                "🔑 Apenas nos confirmes, te enviaremos la *clave secreta de recojo*.\n"
+                "¡Con esa clave y tu DNI, la joya es tuya! Es un método 100% seguro. 🔒\n\n"
+                "Para poder hacer el envío, ¿conoces la dirección de alguna agencia Shalom que te quede cerca? (Sí/No)"
+            )
+            send_text_message(from_number, mensaje_explicacion)
+            
+    elif current_state == 'awaiting_shalom_agency_knowledge':
+        if 'si' in text.lower() or 'sí' in text.lower():
+            save_session(from_number, {"state": "awaiting_shalom_details"})
+            send_text_message(from_number, "¡Perfecto! Entonces, por favor, bríndame en un solo mensaje tu *Nombre Completo*, *DNI* y la *dirección de esa agencia Shalom*.")
+        else:
+            delete_session(from_number)
+            send_text_message(from_number, "Entiendo. 😔 Te recomiendo buscar en Google 'Shalom agencias' para encontrar la más cercana para una futura compra. ¡Muchas gracias por tu interés!")
+
+    elif current_state in ['awaiting_delivery_details', 'awaiting_shalom_details']:
+        session.update({"state": "awaiting_final_confirmation", "detalles_cliente": text})
+        save_session(from_number, session)
+        # Mostrar resumen y pedir confirmación
+        
+    elif current_state == 'awaiting_final_confirmation':
+        if 'si' in text.lower() or 'sí' in text.lower():
+            if session.get('tipo_envio') == 'Lima Contra Entrega':
+                adelanto = BUSINESS_RULES.get('adelanto_lima_delivery', 10)
+                # ... Lógica para pedir adelanto y luego pago
+            else: # Shalom
+                adelanto = BUSINESS_RULES.get('adelanto_shalom', 20)
+                # ... Lógica para pedir adelanto y luego pago
+        else:
+            # Lógica para corregir datos
+            
+    elif current_state == 'awaiting_payment_proof':
+        # Lógica final para confirmar pedido
+        guardado_exitoso, sale_data = save_completed_sale_and_customer(session)
+        if guardado_exitoso:
+            guardar_pedido_en_sheet(sale_data)
+            # ... Enviar mensaje de confirmación final
+            delete_session(from_number)
+        else:
+            send_text_message(from_number, "Hubo un error al procesar tu pedido. Un asesor se pondrá en contacto contigo.")
 
     else:
         send_text_message(from_number, "Estoy un poco confundido. Si deseas reiniciar, escribe 'cancelar'.")
@@ -346,14 +457,63 @@ def handle_sales_flow(from_number, text, session):
 # ==============================================================================
 @app.route('/api/webhook', methods=['GET', 'POST'])
 def webhook():
-    # ... (código del webhook no cambia)
+    if request.method == 'GET':
+        mode, token, challenge = request.args.get('hub.mode'), request.args.get('hub.verify_token'), request.args.get('hub.challenge')
+        if mode == 'subscribe' and token == VERIFY_TOKEN:
+            return challenge
+        return 'Forbidden', 403
+    elif request.method == 'POST':
+        try:
+            data = request.get_json()
+            if data.get('object') == 'whatsapp_business_account':
+                for entry in data.get('entry', []):
+                    for change in entry.get('changes', []):
+                        if change.get('field') == 'messages':
+                            value = change.get('value', {})
+                            if value.get('messages'):
+                                for message in value.get('messages'):
+                                    process_message(message, value.get('contacts', []))
+            return jsonify({'status': 'success'}), 200
+        except Exception as e:
+            logger.error(f"Error procesando webhook: {e}")
+            return jsonify({'error': str(e)}), 500
 
 def process_message(message, contacts):
-    # ... (código del procesador de mensajes no cambia)
+    try:
+        from_number = message.get('from')
+        user_name = next((c.get('profile', {}).get('name', 'Usuario') for c in contacts if c.get('wa_id') == from_number), 'Usuario')
+        
+        message_type = message.get('type')
+        if message_type == 'text':
+            text_body = message.get('text', {}).get('body', '')
+        elif message_type == 'image':
+            text_body = "COMPROBANTE_PAGO" # Identificador para la lógica
+        else:
+            send_text_message(from_number, "Por ahora solo puedo procesar mensajes de texto e imágenes de comprobantes. 😊")
+            return
+
+        logger.info(f"Procesando de {user_name} ({from_number}): '{text_body}'")
+
+        if text_body.lower() in PALABRAS_CANCELACION:
+            delete_session(from_number)
+            send_text_message(from_number, "Hecho. He cancelado el proceso actual. Si necesitas algo más, no dudes en escribirme. 😊")
+            return
+
+        session = get_session(from_number)
+        if not session:
+            handle_initial_message(from_number, user_name, text_body)
+        else:
+            # Manejar comprobante de pago
+            if session.get('state') in ['awaiting_lima_payment', 'awaiting_shalom_payment'] and text_body == "COMPROBANTE_PAGO":
+                 handle_sales_flow(from_number, "COMPROBANTE_RECIBIDO", session)
+            elif message_type == 'text':
+                handle_sales_flow(from_number, text_body, session)
+            else:
+                send_text_message(from_number, "Recibí tu imagen, pero solo la procesaré si estoy esperando un comprobante de pago.")
+
+    except Exception as e:
+        logger.error(f"Error en process_message: {e}")
 
 @app.route('/')
 def home():
-    return jsonify({'status': 'Bot Daaqui Activo - V4 Final'})
-
-if __name__ == '__main__':
-    app.run(debug=True)
+    return jsonify({'status': 'Bot Daaqui Activo - V5 Final'})
