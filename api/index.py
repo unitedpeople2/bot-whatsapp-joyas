@@ -198,6 +198,11 @@ def handle_sales_flow(from_number, text, session):
         if 'si' in text.lower() or 'sí' in text.lower():
             url_imagen_upsell = product_data.get('imagenes', {}).get('upsell')
             
+            # CORRECCIÓN DEFINITIVA: Se envía la imagen de la oferta PRIMERO.
+            if url_imagen_upsell:
+                send_image_message(from_number, url_imagen_upsell)
+                time.sleep(2)
+
             # Bloque de mensaje 1: La oferta
             upsell_message_1 = (
                 "¡Excelente elección! Pero espera, antes de continuar... por haber decidido llevar tu collar, ¡acabas de desbloquear una oferta exclusiva! ✨\n\n"
@@ -210,11 +215,6 @@ def handle_sales_flow(from_number, text, session):
             )
             send_text_message(from_number, upsell_message_1)
             time.sleep(2) # Pausa para dar tiempo de lectura
-
-            # Se envía la imagen de la oferta en medio de los textos
-            if url_imagen_upsell:
-                send_image_message(from_number, url_imagen_upsell)
-                time.sleep(2)
 
             # Bloque de mensaje 2: Urgencia y llamada a la acción
             upsell_message_2 = (
