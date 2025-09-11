@@ -134,6 +134,7 @@ def save_completed_sale_and_customer(session_data):
             "producto_nombre": session_data.get('product_name'),
             "precio_venta": session_data.get('product_price'),
             "tipo_envio": session_data.get('tipo_envio'),
+            "metodo_pago": session_data.get('metodo_pago'), # DATO NUEVO
             "provincia": session_data.get('provincia'),
             "distrito": session_data.get('distrito'),
             "detalles_cliente": session_data.get('detalles_cliente'),
@@ -215,6 +216,7 @@ def guardar_pedido_en_sheet(sale_data):
             sale_data.get('producto_nombre', 'N/A'),
             sale_data.get('precio_venta', 0),
             sale_data.get('tipo_envio', 'N/A'),
+            sale_data.get('metodo_pago', 'N/A'), # DATO NUEVO
             sale_data.get('provincia', 'N/A'),
             sale_data.get('distrito', 'N/A'),
             sale_data.get('detalles_cliente', 'N/A'),
@@ -357,7 +359,13 @@ def handle_sales_flow(from_number, text, session):
     elif current_state == 'awaiting_province_district':
         provincia, distrito = parse_province_district(text)
         adelanto = BUSINESS_RULES.get('adelanto_shalom', 20)
-        session.update({"state": "awaiting_shalom_agreement", "tipo_envio": "Provincia Shalom", "provincia": provincia, "distrito": distrito})
+        session.update({
+            "state": "awaiting_shalom_agreement", 
+            "tipo_envio": "Provincia Shalom", 
+            "metodo_pago": "Adelanto y Saldo (Yape/Plin)",
+            "provincia": provincia, 
+            "distrito": distrito
+        })
         save_session(from_number, session)
         mensaje = (
             f"¡Perfecto! Para envíos a *{distrito}*, usamos la agencia *Shalom* para que tu joya llegue de forma segura. ✨\n\n"
@@ -371,7 +379,11 @@ def handle_sales_flow(from_number, text, session):
         if status != 'NO_ENCONTRADO':
             session['distrito'] = distrito
             if status == 'CON_COBERTURA':
-                session.update({"state": "awaiting_delivery_details", "tipo_envio": "Lima Contra Entrega"})
+                session.update({
+                    "state": "awaiting_delivery_details", 
+                    "tipo_envio": "Lima Contra Entrega",
+                    "metodo_pago": "Contra Entrega (Efectivo/Yape/Plin)"
+                })
                 save_session(from_number, session)
                 mensaje = (
                     "¡Excelente! Tenemos cobertura en *{distrito}*. 🏙️\n\n"
@@ -381,7 +393,11 @@ def handle_sales_flow(from_number, text, session):
                 send_text_message(from_number, mensaje.format(distrito=distrito))
             elif status == 'SIN_COBERTURA':
                 adelanto = BUSINESS_RULES.get('adelanto_shalom', 20)
-                session.update({"state": "awaiting_shalom_agreement", "tipo_envio": "Lima Shalom"})
+                session.update({
+                    "state": "awaiting_shalom_agreement", 
+                    "tipo_envio": "Lima Shalom",
+                    "metodo_pago": "Adelanto y Saldo (Yape/Plin)"
+                })
                 save_session(from_number, session)
                 mensaje = (
                     f"Entendido. Para *{distrito}*, los envíos son por agencia *Shalom* y requieren un adelanto de *S/ {adelanto:.2f}*. Este monto funciona como un *compromiso para el recojo del pedido*.\n\n"
@@ -394,13 +410,15 @@ def handle_sales_flow(from_number, text, session):
     elif current_state in ['awaiting_delivery_details', 'awaiting_shalom_details']:
         session.update({"state": "awaiting_final_confirmation", "detalles_cliente": text})
         save_session(from_number, session)
+        
         resumen = (
             "¡Gracias! Revisa que todo esté correcto para proceder:\n\n"
-            "*Resumen del Pedido:*\n"
+            "**Resumen del Pedido:**\n"
             f"💎 {session.get('product_name', '')}\n"
             f"💵 Total: S/ {session.get('product_price', 0):.2f}\n"
-            f"🚚 Envío: {session.get('distrito', session.get('provincia', ''))}\n\n"
-            "*Datos de Entrega:*\n"
+            f"🚚 Envío: {session.get('distrito', session.get('provincia', ''))} - **¡Totalmente Gratis!**\n"
+            f"💳 **Pago: {session.get('metodo_pago', 'No definido')}**\n\n"
+            "**Datos de Entrega:**\n"
             f"{session.get('detalles_cliente', '')}\n\n"
             "¿Confirmas que todo es correcto? (Sí/No)"
         )
