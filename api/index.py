@@ -120,23 +120,18 @@ def find_product_by_keywords(text):
         logger.error(f"Error buscando producto por palabras clave: {e}")
     return None, None
 
-def save_completed_sale_and_customer(session_data, product_data):
+def save_completed_sale_and_customer(session_data):
     if not db: return False, None
     try:
         sale_id = str(uuid.uuid4())
         customer_id = session_data.get('whatsapp_id')
         
-        # Lógica robusta para asegurar el precio correcto
-        final_price = session_data.get('product_price')
-        if session_data.get('is_upsell'):
-            final_price = float(product_data.get('oferta_upsell', {}).get('precio_oferta', final_price))
-
         sale_data = {
             "fecha": firestore.SERVER_TIMESTAMP,
             "id_venta": sale_id,
             "producto_id": session_data.get('product_id'),
             "producto_nombre": session_data.get('product_name'),
-            "precio_venta": final_price,
+            "precio_venta": session_data.get('product_price'),
             "tipo_envio": session_data.get('tipo_envio'),
             "metodo_pago": session_data.get('metodo_pago'),
             "provincia": session_data.get('provincia'),
@@ -261,7 +256,7 @@ def handle_initial_message(from_number, user_name, text):
             "state": "awaiting_occasion_response", "product_id": product_id,
             "product_name": nombre_producto, "product_price": float(precio),
             "user_name": user_name, "whatsapp_id": from_number,
-            "is_upsell": False # Inicializamos la bandera de la oferta
+            "is_upsell": False
         }
         save_session(from_number, new_session)
     else:
@@ -339,18 +334,21 @@ def handle_sales_flow(from_number, text, session):
             send_text_message(from_number, "Entendido. Si cambias de opinión, aquí estaré. ¡Que tengas un buen día! 😊")
 
     elif current_state == 'awaiting_upsell_decision':
+        # ===== INICIO DE LA CORRECCIÓN A PRUEBA DE BALAS =====
+        updates_to_session = {'state': 'awaiting_location'}
         oferta_upsell = product_data.get('oferta_upsell', {})
+        
         if 'oferta' in text.lower():
-            session['product_name'] = oferta_upsell.get('nombre_producto_oferta', session['product_name'])
-            session['product_price'] = float(oferta_upsell.get('precio_oferta', session['product_price']))
-            session['is_upsell'] = True # <--- LA BANDERA IMPORTANTE
+            updates_to_session['product_name'] = oferta_upsell.get('nombre_producto_oferta', session.get('product_name'))
+            updates_to_session['product_price'] = float(oferta_upsell.get('precio_oferta', session.get('product_price')))
+            updates_to_session['is_upsell'] = True
             send_text_message(from_number, "¡Genial! Has elegido la oferta. ✨")
         else: 
-            session['is_upsell'] = False
+            updates_to_session['is_upsell'] = False
             send_text_message(from_number, "¡Perfecto! Continuamos con tu collar individual. ✨")
         
-        session['state'] = 'awaiting_location'
-        save_session(from_number, session)
+        save_session(from_number, updates_to_session)
+        # ===== FIN DE LA CORRECCIÓN A PRUEBA DE BALAS =====
         send_text_message(from_number, "Para empezar a coordinar el envío, por favor, dime: ¿eres de *Lima* o de *provincia*?")
 
     elif current_state == 'awaiting_location':
@@ -422,11 +420,10 @@ def handle_sales_flow(from_number, text, session):
         session.update({"state": "awaiting_final_confirmation", "detalles_cliente": text})
         save_session(from_number, session)
         
-        # Lógica robusta para el precio
         final_price = session.get('product_price')
+        # Lógica robusta por si acaso
         if session.get('is_upsell'):
             final_price = float(product_data.get('oferta_upsell', {}).get('precio_oferta', final_price))
-            session['product_price'] = final_price # Re-aseguramos el precio en la sesión
         
         resumen = (
             "¡Gracias! Revisa que todo esté correcto para proceder:\n\n"
@@ -512,11 +509,10 @@ def handle_sales_flow(from_number, text, session):
 
     elif current_state == 'awaiting_lima_payment_agreement':
         if 'si' in text.lower() or 'sí' in text.lower():
-            adelanto = session.get('adelanto', 10)
             session['state'] = 'awaiting_lima_payment'
             save_session(from_number, session)
             mensaje = (
-                f"¡Genial! Puedes realizar el adelanto de *S/ {adelanto:.2f}* a nuestra cuenta de Yape Empresa:\n\n"
+                f"¡Genial! Puedes realizar el adelanto de *S/ {session.get('adelanto', 10):.2f}* a nuestra cuenta de Yape Empresa:\n\n"
                 f"💳 *YAPE:* {BUSINESS_RULES.get('yape_numero', 'No configurado')}\n"
                 f"👤 *Titular:* {TITULAR_YAPE}\n\n"
                 f"Tu compra es 100% segura. 🔒 Somos un negocio formal con *RUC {RUC_EMPRESA}*.\n\n"
