@@ -108,7 +108,7 @@ def find_product_by_keywords(text):
             product_id = "collar-girasol-radiant-01"
             product_ref = db.collection('productos').document(product_id)
             product_doc = product_ref.get()
-            if product_doc.exists:
+            if product_doc.exists and product_doc.to_dict().get('activo'):
                 return product_id, product_doc.to_dict()
     except Exception as e:
         logger.error(f"Error buscando producto por palabras clave: {e}")
@@ -127,7 +127,7 @@ def handle_initial_message(from_number, user_name, text):
 
         if url_imagen_principal:
             send_image_message(from_number, url_imagen_principal)
-            time.sleep(2) # Pausa estratégica reducida
+            time.sleep(2)
 
         mensaje_inicial = (
             f"¡Hola {user_name}! 🌞 El *{nombre_producto}* {descripcion_corta}\n\n"
@@ -174,9 +174,8 @@ def handle_sales_flow(from_number, text, session):
 
         if url_imagen_empaque:
             send_image_message(from_number, url_imagen_empaque)
-            time.sleep(2) # Pausa estratégica reducida
+            time.sleep(2)
 
-        # Bloque de mensaje 1: Detalles del producto
         mensaje_persuasion_1 = (
             "¡Maravillosa elección! ✨ El *Collar Mágico Girasol Radiant* es pura energía. Aquí tienes todos los detalles:\n\n"
             f"💎 *Material:* {material} ¡Hipoalergénico y no se oscurece!\n"
@@ -184,9 +183,8 @@ def handle_sales_flow(from_number, text, session):
             f"🎁 *Presentación:* {presentacion}, ¡lista para sorprender!"
         )
         send_text_message(from_number, mensaje_persuasion_1)
-        time.sleep(2) # Pausa para dar tiempo de lectura
+        time.sleep(2)
 
-        # Bloque de mensaje 2: Ancla de confianza y llamada a la acción
         mensaje_persuasion_2 = (
             f"Para tu total seguridad, somos Daaqui Joyas, un negocio formal con *RUC {RUC_EMPRESA}*. ¡Tu compra es 100% segura! 🇵🇪\n\n"
             "¿Te gustaría coordinar tu pedido ahora para asegurar el tuyo? (Sí/No)"
@@ -196,48 +194,54 @@ def handle_sales_flow(from_number, text, session):
 
     elif current_state == 'awaiting_purchase_decision':
         if 'si' in text.lower() or 'sí' in text.lower():
-            url_imagen_upsell = product_data.get('imagenes', {}).get('upsell')
+            oferta_upsell = product_data.get('oferta_upsell')
             
-            # CORRECCIÓN DEFINITIVA: Se envía la imagen de la oferta PRIMERO.
-            if url_imagen_upsell:
-                send_image_message(from_number, url_imagen_upsell)
+            if oferta_upsell and oferta_upsell.get('activo'):
+                url_imagen_upsell = product_data.get('imagenes', {}).get('upsell')
+                
+                # CORRECCIÓN DEFINITIVA: Se envía la imagen de la oferta PRIMERO.
+                if url_imagen_upsell:
+                    send_image_message(from_number, url_imagen_upsell)
+                    time.sleep(2)
+
+                # Bloque de mensaje 1: La oferta
+                upsell_message_1 = oferta_upsell.get('bloque_texto_1', '¡Tenemos una oferta especial para ti!')
+                send_text_message(from_number, upsell_message_1)
                 time.sleep(2)
 
-            # Bloque de mensaje 1: La oferta
-            upsell_message_1 = (
-                "¡Excelente elección! Pero espera, antes de continuar... por haber decidido llevar tu collar, ¡acabas de desbloquear una oferta exclusiva! ✨\n\n"
-                "Añade un *segundo Collar Mágico* a tu pedido y te incluimos de regalo *dos cadenas de diseño italiano* para que combines tus dijes como quieras.\n\n"
-                "En resumen, tu pedido se ampliaría a:\n"
-                "✨ 2 Collares Mágicos\n"
-                "🎁 2 Cadenas de Regalo de diseño\n"
-                "🎀 2 Cajitas de Regalo Premium Daaqui\n"
-                "💎 Todo por un único pago de *S/ 99.00*"
-            )
-            send_text_message(from_number, upsell_message_1)
-            time.sleep(2) # Pausa para dar tiempo de lectura
+                # Bloque de mensaje 2: Urgencia y llamada a la acción
+                upsell_message_2 = oferta_upsell.get('bloque_texto_2', 'Responde "oferta" o "continuar".')
+                send_text_message(from_number, upsell_message_2)
 
-            # Bloque de mensaje 2: Urgencia y llamada a la acción
-            upsell_message_2 = (
-                "*Esta oferta especial es válida solo para los pedidos confirmados hoy.*\n\n"
-                "Para continuar, por favor, respóndeme con una de estas dos palabras:\n"
-                "👉🏽 Escribe *\"oferta\"* para ampliar tu pedido.\n"
-                "👉🏽 Escribe *\"continuar\"* para llevar solo un collar."
-            )
-            send_text_message(from_number, upsell_message_2)
-
-            save_session(from_number, {"state": "awaiting_upsell_decision"})
+                save_session(from_number, {"state": "awaiting_upsell_decision"})
+            else:
+                # Si no hay oferta, saltamos directamente a pedir la ubicación
+                send_text_message(from_number, "¡Perfecto! Para empezar a coordinar el envío, por favor, dime: ¿eres de *Lima* o de *provincia*?")
+                save_session(from_number, {"state": "awaiting_location"})
         else:
             delete_session(from_number)
             send_text_message(from_number, "Entendido. Si cambias de opinión, aquí estaré para ayudarte. ¡Que tengas un buen día! 😊")
+            
+    elif current_state == 'awaiting_upsell_decision':
+        oferta_upsell = product_data.get('oferta_upsell', {})
+        
+        if 'oferta' in text.lower():
+            session['product_name'] = oferta_upsell.get('nombre_producto_oferta', session['product_name'])
+            session['product_price'] = oferta_upsell.get('precio_oferta', session['product_price'])
+            send_text_message(from_number, "¡Genial! Has elegido la oferta. ✨")
+        else: 
+            send_text_message(from_number, "¡Perfecto! Continuamos con tu collar individual. ✨")
+        
+        send_text_message(from_number, "Para empezar a coordinar el envío, por favor, dime: ¿eres de *Lima* o de *provincia*?")
+        save_session(from_number, {"state": "awaiting_location"})
 
-    # (Aquí iría el resto del flujo de venta: awaiting_upsell_decision, awaiting_location, etc.)
-    # Esto se completará en los siguientes pasos (Paso 3 y 4 del plan).
+    # (Aquí continuará la lógica completa de los 3 flujos de venta)
 
     else:
         send_text_message(from_number, "Estoy un poco confundido. Si deseas reiniciar, escribe 'cancelar'.")
 
 # ==============================================================================
-# 7. WEBHOOK PRINCIPAL Y PROCESADOR DE MENSAJES
+# 8. WEBHOOK PRINCIPAL Y PROCESADOR DE MENSAJES
 # ==============================================================================
 @app.route('/api/webhook', methods=['GET', 'POST'])
 def webhook():
