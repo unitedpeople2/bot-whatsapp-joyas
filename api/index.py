@@ -46,6 +46,12 @@ ADMIN_WHATSAPP_NUMBER = os.environ.get('ADMIN_WHATSAPP_NUMBER')
 RUC_EMPRESA = "10700761130" # RUC de la empresa para mensajes de confianza
 KEYWORDS_GIRASOL = ["girasol", "radiant", "precio", "cambia de color"]
 
+# Listas para la lógica de envíos en Lima (se reintroducen para el flujo de venta)
+TODOS_LOS_DISTRITOS_LIMA = [ "ancón", "ate", "barranco", "breña", "carabayllo", "chaclacayo", "chorrillos", "cieneguilla", "comas", "el agustino", "independencia", "jesús maría", "la molina", "la victoria", "lince", "los olivos", "lurigancho-chosica", "chosica", "lurín", "magdalena del mar", "miraflores", "pachacámac", "pucusana", "pueblo libre", "puente piedra", "punta hermosa", "punta negra", "rímac", "san bartolo", "san borja", "san isidro", "san juan de lurigancho", "san juan de miraflores", "san luis", "san martín de porres", "san miguel", "santa anita", "santa maría del mar", "santa rosa", "santiago de surco", "surquillo", "villa el salvador", "villa maría del triunfo", "cercado de lima", "bellavista", "carmen de la legua", "la perla", "la punta", "ventanilla", "callao" ]
+COBERTURA_DELIVERY_LIMA = [ "ate", "barranco", "bellavista", "breña", "callao", "carabayllo", "carmen de la legua", "cercado de lima", "chorrillos", "comas", "el agustino", "independencia", "jesus maria", "la molina", "la perla", "la punta", "la victoria", "lince", "los olivos", "magdalena", "miraflores", "pueblo libre", "puente piedra", "rimac", "san borja", "san isidro", "san juan de lurigancho", "san juan de miraflores", "san luis", "san martin de porres", "san miguel", "santa anita", "surco", "surquillo", "villa el salvador", "villa maria del triunfo" ]
+ABREVIATURAS_DISTRITOS = { "sjl": "san juan de lurigancho", "sjm": "san juan de miraflores", "smp": "san martin de porres", "vmt": "villa maria del triunfo", "ves": "villa el salvador", "lima centro": "cercado de lima" }
+PALABRAS_CANCELACION = ["cancelar", "cancelo", "ya no quiero", "ya no", "mejor no", "detener", "no gracias"]
+
 
 # ==============================================================================
 # 3. FUNCIONES DE COMUNICACIÓN CON WHATSAPP
@@ -111,9 +117,6 @@ def find_product_by_keywords(text):
     """Busca un producto en Firestore que coincida con las palabras clave."""
     if not db: return None, None
     try:
-        # Simplificación: por ahora, buscamos el producto principal por su ID.
-        # En el futuro, esta función puede ser más compleja para buscar por nombre, etc.
-        # Basado en tu guion, el producto clave es 'collar-girasol-radiant-01'
         if any(keyword in text.lower() for keyword in KEYWORDS_GIRASOL):
             product_id = "collar-girasol-radiant-01"
             product_ref = db.collection('productos').document(product_id)
@@ -125,7 +128,25 @@ def find_product_by_keywords(text):
     return None, None
 
 # ==============================================================================
-# 5. LÓGICA DE LA CONVERSACIÓN - ETAPA 1 (EMBUDO DE VENTAS INICIAL)
+# 5. FUNCIONES AUXILIARES DE LÓGICA DE VENTA
+# ==============================================================================
+def es_distrito_de_lima(texto_usuario):
+    """Verifica si un texto contiene un distrito de Lima."""
+    texto = texto_usuario.lower().strip()
+    for distrito in TODOS_LOS_DISTRITOS_LIMA:
+        if re.search(r'\b' + re.escape(distrito) + r'\b', texto):
+            return distrito.title()
+    for abreviatura, nombre_completo in ABREVIATURAS_DISTRITOS.items():
+        if re.search(r'\b' + re.escape(abreviatura) + r'\b', texto):
+            return nombre_completo.title()
+    return None
+
+def verificar_cobertura_delivery(distrito):
+    """Verifica si un distrito tiene cobertura de delivery contra entrega."""
+    return distrito.lower() in COBERTURA_DELIVERY_LIMA
+
+# ==============================================================================
+# 6. LÓGICA DE LA CONVERSACIÓN - ETAPA 1 (EMBUDO DE VENTAS INICIAL)
 # ==============================================================================
 def handle_initial_message(from_number, user_name, text):
     """Maneja el primer mensaje de un usuario (cuando no hay sesión activa)."""
@@ -134,18 +155,14 @@ def handle_initial_message(from_number, user_name, text):
 
     if product_data:
         # Se encontró un producto, iniciamos el embudo de ventas.
-        
-        # Extraer datos del producto desde Firestore
         nombre_producto = product_data.get('nombre', 'nuestro producto')
         descripcion_corta = product_data.get('descripcion_corta', 'es simplemente increíble.')
         precio = product_data.get('precio_base', 0)
         url_imagen_principal = product_data.get('imagenes', {}).get('principal')
 
-        # 1. Enviar imagen principal
         if url_imagen_principal:
             send_image_message(from_number, url_imagen_principal)
 
-        # 2. Enviar primer guion de venta
         mensaje_inicial = (
             f"¡Hola {user_name}! 🌞 El *{nombre_producto}* {descripcion_corta}\n\n"
             f"Por nuestra campaña del 21 de Septiembre, llévatelo a un precio especial de *S/ {precio:.2f}* "
@@ -154,26 +171,24 @@ def handle_initial_message(from_number, user_name, text):
         )
         send_text_message(from_number, mensaje_inicial)
 
-        # 3. Crear una sesión para continuar el flujo
         new_session = {
             "state": "awaiting_occasion_response",
             "product_id": product_id,
+            "product_name": nombre_producto,
+            "product_price": precio,
             "user_name": user_name
         }
         save_session(from_number, new_session)
 
     else:
-        # No se identificó un producto, enviar mensaje de bienvenida genérico
-        # (En el futuro, aquí podría haber un menú de opciones)
         send_text_message(from_number, f"¡Hola {user_name}! 👋🏽✨ Bienvenida a *Daaqui Joyas*. Si deseas información sobre nuestro *Collar Mágico Girasol Radiant*, solo pregunta por él. 😊")
 
 # ==============================================================================
-# 6. LÓGICA DE LA CONVERSACIÓN - ETAPA 2 (FLUJO DE COMPRA GUIADO)
+# 7. LÓGICA DE LA CONVERSACIÓN - ETAPA 2 (FLUJO DE COMPRA GUIADO)
 # ==============================================================================
 def handle_sales_flow(from_number, text, session):
     """Maneja la conversación de un usuario con una sesión activa."""
     
-    # NUEVA LÓGICA: Verificar si el usuario quiere reiniciar el flujo.
     if any(keyword in text.lower() for keyword in KEYWORDS_GIRASOL):
         logger.info(f"Usuario {from_number} está reiniciando el flujo.")
         delete_session(from_number)
@@ -183,7 +198,6 @@ def handle_sales_flow(from_number, text, session):
     current_state = session.get('state')
     product_id = session.get('product_id')
 
-    # Obtener los datos del producto en cada paso para asegurar información actualizada
     product_ref = db.collection('productos').document(product_id)
     product_data = product_ref.get().to_dict()
 
@@ -192,44 +206,92 @@ def handle_sales_flow(from_number, text, session):
         delete_session(from_number)
         return
 
-    # Extraer detalles para el segundo guion
-    url_imagen_empaque = product_data.get('imagenes', {}).get('empaque')
-    detalles = product_data.get('detalles', {})
-    material = detalles.get('material', 'material de alta calidad')
-    magia = "Su piedra central es termocromática, cambia de color con tu temperatura." # Descripción de la magia
-    presentacion = detalles.get('empaque', 'viene en una hermosa caja de regalo')
-
+    # --- INICIO DEL FLUJO DE VENTA ---
     if current_state == 'awaiting_occasion_response':
-        # El cliente respondió a la pregunta abierta, ahora enviamos el segundo guion.
-        
-        # 1. Enviar imagen del empaque (si existe)
+        url_imagen_empaque = product_data.get('imagenes', {}).get('empaque')
+        detalles = product_data.get('detalles', {})
+        material = detalles.get('material', 'material de alta calidad')
+        magia = "Su piedra central es termocromática, cambia de color con tu temperatura."
+        presentacion = detalles.get('empaque', 'viene en una hermosa caja de regalo')
+
         if url_imagen_empaque:
             send_image_message(from_number, url_imagen_empaque)
 
-        # 2. Enviar segundo guion de persuasión
         mensaje_persuasion = (
             "¡Maravillosa elección! ✨ El *Collar Mágico Girasol Radiant* es pura energía. Aquí tienes todos los detalles:\n\n"
             f"💎 *Material:* {material} ¡Hipoalergénico y no se oscurece!\n"
             f"🔮 *La Magia:* {magia}\n"
             f"🎁 *Presentación:* {presentacion}, ¡lista para sorprender!\n\n"
             f"Para tu total seguridad, somos Daaqui Joyas, un negocio formal con *RUC {RUC_EMPRESA}*. ¡Tu compra es 100% segura! 🇵🇪\n\n"
-            "¡Estás a un paso de tenerlo! A continuación te mostraré las opciones para que elijas la que más te guste. *¿Continuamos?*"
+            "¿Te gustaría coordinar tu pedido ahora para asegurar el tuyo?"
         )
         send_text_message(from_number, mensaje_persuasion)
+        
+        save_session(from_number, {"state": "awaiting_purchase_decision"})
 
-        # 3. Actualizar estado
-        session['state'] = 'awaiting_purchase_confirmation'
+    elif current_state == 'awaiting_purchase_decision':
+        if 'si' in text.lower() or 'sí' in text.lower() or 'continuamos' in text.lower():
+            # Aquí va la lógica del UPSELL
+            # Por ahora, la información del upsell está en el código. En el futuro, puede venir de Firestore.
+            upsell_message = (
+                "¡Excelente elección! Pero espera, antes de continuar... por haber decidido llevar tu collar, ¡acabas de desbloquear una oferta exclusiva! ✨\n\n"
+                "Llévate un *segundo Collar Mágico* por solo *S/ 20 adicionales* y te incluimos de regalo *dos cadenas de diseño italiano* para que combines tus dijes como quieras.\n\n"
+                "En resumen, tendrías:\n"
+                "✅ 2 Collares Mágicos\n"
+                "✅ 2 Cadenas de Regalo\n"
+                "✅ Todo por solo *S/ 89.00*\n\n"
+                "Para continuar, por favor, respóndeme con una de estas dos palabras:\n"
+                "👉🏽 Escribe *\"oferta\"* para ampliar tu pedido.\n"
+                "👉🏽 Escribe *\"continuar\"* para llevar solo un collar."
+            )
+            send_text_message(from_number, upsell_message)
+            save_session(from_number, {"state": "awaiting_upsell_decision"})
+        else:
+            delete_session(from_number)
+            send_text_message(from_number, "Entendido. Si cambias de opinión o necesitas algo más, aquí estaré para ayudarte. ¡Que tengas un buen día! 😊")
+
+    elif current_state == 'awaiting_upsell_decision':
+        if 'oferta' in text.lower():
+            session['product_name'] = "Oferta 2x Collares Mágicos + Cadenas"
+            session['product_price'] = 89.00
+            send_text_message(from_number, "¡Genial! Has elegido la oferta. ✨")
+        else: # Asumimos 'continuar' o cualquier otra respuesta positiva
+            send_text_message(from_number, "¡Perfecto! Continuamos con tu collar individual. ✨")
+        
+        session['state'] = 'awaiting_location'
         save_session(from_number, session)
+        send_text_message(from_number, "Para empezar a coordinar el envío, por favor, dime: ¿eres de *Lima* o de *provincia*?")
 
-    # Aquí irían los demás estados del flujo de compra (awaiting_purchase_confirmation, etc.)
-    # Por ahora, mantenemos esta estructura para validar la conexión con Firestore.
-    # Los pasos de pedir ubicación, datos de envío, etc., se agregarán en la siguiente fase.
+    elif current_state == 'awaiting_location':
+        if 'provincia' in text.lower():
+             # Flujo de Provincia
+            session['state'] = 'awaiting_shalom_agreement'
+            session['tipo_envio'] = 'Shalom'
+            session['distrito'] = 'Provincia' # Placeholder
+            save_session(from_number, session)
+            mensaje = ("¡Perfecto! Para envíos a provincia, usamos la agencia *Shalom* para que tu joya llegue de forma segura. ✨\n\n"
+                       "Para separar tu producto y gestionar el envío, requerimos un adelanto de *S/ 20.00*. Este monto funciona como un *compromiso para el recojo del pedido* en la agencia.\n\n"
+                       "¿Estás de acuerdo para continuar? (Sí/No)")
+            send_text_message(from_number, mensaje)
+
+        elif 'lima' in text.lower():
+            session['state'] = 'awaiting_lima_district'
+            save_session(from_number, session)
+            send_text_message(from_number, "¡Genial! ✨ Para empezar a coordinar la entrega de tu joya, por favor, dime: ¿en qué *distrito* te encuentras? 📍")
+        
+        else:
+            send_text_message(from_number, "¿Eres de *Lima* o de *provincia*? Por favor, responde con una de esas dos opciones.")
+
+    # (Aquí continuaría toda la lógica de los 3 flujos de venta que ya habíamos construido antes...)
+    # Por brevedad en esta actualización, se omiten los estados:
+    # awaiting_lima_district, awaiting_delivery_details, awaiting_shalom_agreement, etc.
+    # Se implementarán en el siguiente paso.
+
     else:
         send_text_message(from_number, "Estoy un poco confundido. Si deseas reiniciar tu pedido, escribe 'cancelar' y vuelve a empezar.")
 
-
 # ==============================================================================
-# 7. WEBHOOK PRINCIPAL Y PROCESADOR DE MENSAJES
+# 8. WEBHOOK PRINCIPAL Y PROCESADOR DE MENSAJES
 # ==============================================================================
 @app.route('/api/webhook', methods=['GET', 'POST'])
 def webhook():
@@ -271,7 +333,7 @@ def process_message(message, contacts):
         text_body = message.get('text', {}).get('body', '')
         logger.info(f"Procesando de {user_name} ({from_number}): '{text_body}'")
 
-        if text_body.lower() in ['cancelar', 'salir', 'terminar']:
+        if text_body.lower() in PALABRAS_CANCELACION:
             delete_session(from_number)
             send_text_message(from_number, "Hecho. He cancelado el proceso actual. Si necesitas algo más, no dudes en escribirme. 😊")
             return
