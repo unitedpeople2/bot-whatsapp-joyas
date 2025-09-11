@@ -199,23 +199,20 @@ def handle_sales_flow(from_number, text, session):
             if oferta_upsell and oferta_upsell.get('activo'):
                 url_imagen_upsell = product_data.get('imagenes', {}).get('upsell')
                 
-                # CORRECCIÓN DEFINITIVA: Se envía la imagen de la oferta PRIMERO.
                 if url_imagen_upsell:
                     send_image_message(from_number, url_imagen_upsell)
                     time.sleep(2)
 
-                # Bloque de mensaje 1: La oferta
-                upsell_message_1 = oferta_upsell.get('bloque_texto_1', '¡Tenemos una oferta especial para ti!')
+                # CORRECCIÓN: Se reemplaza '\\n' por '\n' para asegurar los saltos de línea
+                upsell_message_1 = oferta_upsell.get('bloque_texto_1', '¡Tenemos una oferta especial para ti!').replace('\\n', '\n')
                 send_text_message(from_number, upsell_message_1)
                 time.sleep(2)
 
-                # Bloque de mensaje 2: Urgencia y llamada a la acción
-                upsell_message_2 = oferta_upsell.get('bloque_texto_2', 'Responde "oferta" o "continuar".')
+                upsell_message_2 = oferta_upsell.get('bloque_texto_2', 'Responde "oferta" o "continuar".').replace('\\n', '\n')
                 send_text_message(from_number, upsell_message_2)
 
                 save_session(from_number, {"state": "awaiting_upsell_decision"})
             else:
-                # Si no hay oferta, saltamos directamente a pedir la ubicación
                 send_text_message(from_number, "¡Perfecto! Para empezar a coordinar el envío, por favor, dime: ¿eres de *Lima* o de *provincia*?")
                 save_session(from_number, {"state": "awaiting_location"})
         else:
