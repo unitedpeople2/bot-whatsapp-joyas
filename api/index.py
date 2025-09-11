@@ -38,7 +38,7 @@ try:
         rules_doc = db.collection('configuracion').document('reglas_envio').get()
         if rules_doc.exists:
             BUSINESS_RULES = rules_doc.to_dict()
-            logger.info("✅ Reglas del negocio cargadas desde Firestore.")
+            logger.info(f"✅ Reglas del negocio cargadas: {BUSINESS_RULES}")
         else:
             logger.error("❌ Documento de reglas de envío no encontrado en Firestore.")
     else:
@@ -192,9 +192,9 @@ def parse_province_district(text):
 
 def get_delivery_day_message():
     weekday = datetime.now().weekday()
-    if weekday < 5: # Lunes a Viernes
+    if weekday < 5:
         return BUSINESS_RULES.get('mensaje_dia_habil', 'mañana')
-    else: # Sábado y Domingo
+    else:
         return BUSINESS_RULES.get('mensaje_fin_semana', 'el Lunes')
 
 def guardar_pedido_en_sheet(sale_data):
@@ -266,8 +266,12 @@ def handle_initial_message(from_number, user_name, text):
 # 7. LÓGICA DE LA CONVERSACIÓN - ETAPA 2 (FLUJO DE COMPRA)
 # ==============================================================================
 def handle_sales_flow(from_number, text, session):
+    logger.info(f"[DEBUG] === INICIO TURNO ===")
+    logger.info(f"[DEBUG] Estado actual: {session.get('state')}, Texto recibido: '{text}'")
+    logger.info(f"[DEBUG] Sesión actual: {session}")
+
     if any(keyword in text.lower() for keyword in KEYWORDS_GIRASOL) and session.get('state') not in ['awaiting_occasion_response', 'awaiting_purchase_decision']:
-        logger.info(f"Usuario {from_number} está reiniciando el flujo.")
+        logger.info(f"[DEBUG] Usuario {from_number} está reiniciando el flujo.")
         delete_session(from_number)
         handle_initial_message(from_number, session.get("user_name", "Usuario"), text)
         return
@@ -332,15 +336,20 @@ def handle_sales_flow(from_number, text, session):
             send_text_message(from_number, "Entendido. Si cambias de opinión, aquí estaré. ¡Que tengas un buen día! 😊")
 
     elif current_state == 'awaiting_upsell_decision':
+        logger.info("[DEBUG] Estado: awaiting_upsell_decision.")
         oferta_upsell = product_data.get('oferta_upsell', {})
         if 'oferta' in text.lower():
+            logger.info("[DEBUG] El cliente eligió la OFERTA.")
             session['product_name'] = oferta_upsell.get('nombre_producto_oferta', session['product_name'])
             session['product_price'] = float(oferta_upsell.get('precio_oferta', session['product_price']))
+            logger.info(f"[DEBUG] ACTUALIZANDO PRECIO A: {session['product_price']}")
             send_text_message(from_number, "¡Genial! Has elegido la oferta. ✨")
         else: 
+            logger.info("[DEBUG] El cliente eligió continuar con 1 producto.")
             send_text_message(from_number, "¡Perfecto! Continuamos con tu collar individual. ✨")
         
         session['state'] = 'awaiting_location'
+        logger.info(f"[DEBUG] GUARDANDO SESIÓN COMPLETA: {session}")
         save_session(from_number, session)
         
         send_text_message(from_number, "Para empezar a coordinar el envío, por favor, dime: ¿eres de *Lima* o de *provincia*?")
@@ -411,6 +420,8 @@ def handle_sales_flow(from_number, text, session):
     elif current_state in ['awaiting_delivery_details', 'awaiting_shalom_details']:
         session.update({"state": "awaiting_final_confirmation", "detalles_cliente": text})
         save_session(from_number, session)
+        logger.info(f"[DEBUG] Estado: {current_state}. Generando resumen.")
+        logger.info(f"[DEBUG] Datos para el resumen: Precio={session.get('product_price')}, Nombre={session.get('product_name')}")
 
         resumen = (
             "¡Gracias! Revisa que todo esté correcto para proceder:\n\n"
@@ -458,10 +469,12 @@ def handle_sales_flow(from_number, text, session):
             send_text_message(from_number, "Entiendo. 😔 Te recomiendo buscar en Google 'Shalom agencias' para encontrar la más cercana para una futura compra. ¡Muchas gracias por tu interés!")
             
     elif current_state == 'awaiting_final_confirmation':
+        logger.info("[DEBUG] Estado: awaiting_final_confirmation.")
         if 'si' in text.lower() or 'sí' in text.lower():
             if session.get('tipo_envio') == 'Lima Contra Entrega':
                 adelanto = float(BUSINESS_RULES.get('adelanto_lima_delivery', 10))
                 session['adelanto'] = adelanto
+                logger.info(f"[DEBUG] Adelanto para Lima calculado: {adelanto}")
                 save_session(from_number, {"state": "awaiting_lima_payment_agreement"})
                 mensaje = (
                     "¡Perfecto! Como último paso para agendar la ruta del motorizado, solicitamos un adelanto de *S/ {adelanto:.2f}*. "
@@ -504,7 +517,10 @@ def handle_sales_flow(from_number, text, session):
             send_text_message(from_number, "Entendido. Si cambias de opinión, aquí estaré. ¡Gracias!")
 
     elif current_state in ['awaiting_lima_payment', 'awaiting_shalom_payment']:
+        logger.info(f"[DEBUG] Estado: {current_state}. Se recibió un mensaje.")
         if text == "COMPROBANTE_RECIBIDO":
+            logger.info("[DEBUG] Mensaje es COMPROBANTE_RECIBIDO. Procesando venta final.")
+            logger.info(f"[DEBUG] Sesión final antes de guardar: {session}")
             guardado_exitoso, sale_data = save_completed_sale_and_customer(session)
             if guardado_exitoso:
                 guardar_pedido_en_sheet(sale_data)
