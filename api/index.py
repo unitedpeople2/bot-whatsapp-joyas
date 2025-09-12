@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # ==========================================================
-# BOT DAAQUI JOYAS - V6.4 - PAUSAS REDUCIDAS
+# BOT DAAQUI JOYAS - V6.3 - MENSAJES DE ENTREGA
 # ==========================================================
 from flask import Flask, request, jsonify
 import requests
@@ -80,10 +80,7 @@ FAQ_KEYWORD_MAP = {
     'transferencia': ['transferencia', 'banco', 'bcp', 'interbank', 'cuenta', 'transferir']
 }
 
-# ==============================================================================
-# 3. FUNCIONES DE COMUNICACIÓN CON WHATSAPP
-# ==============================================================================
-# ... (Esta sección no cambia)
+# ... (El resto del código hasta handle_sales_flow se mantiene igual)
 def send_whatsapp_message(to_number, message_data):
     if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
         logger.error("Token de WhatsApp o ID de número de teléfono no configurados.")
@@ -102,12 +99,7 @@ def send_text_message(to_number, text):
 
 def send_image_message(to_number, image_url):
     send_whatsapp_message(to_number, {"type": "image", "image": {"link": image_url}})
-# ...
 
-# ==============================================================================
-# 4. FUNCIONES DE INTERACCIÓN CON FIRESTORE
-# ==============================================================================
-# ... (Esta sección no cambia)
 def get_session(user_id):
     if not db: return None
     try:
@@ -187,12 +179,7 @@ def save_completed_sale_and_customer(session_data):
     except Exception as e:
         logger.error(f"Error guardando venta y cliente en Firestore: {e}")
         return False, None
-# ...
 
-# ==============================================================================
-# 5. FUNCIONES AUXILIARES DE LÓGICA DE NEGOCIO
-# ==============================================================================
-# ... (Esta sección no cambia)
 def strip_accents(text):
     return ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
 
@@ -283,13 +270,9 @@ def get_last_question(state):
         "awaiting_shalom_payment": "Una vez realizado, por favor, envíame la *captura de pantalla* para validar tu pedido."
     }
     return questions.get(state)
-# ...
 
-# ==============================================================================
-# 6. LÓGICA DE LA CONVERSACIÓN - ETAPA 1 (EMBUDO DE VENTAS)
-# ==============================================================================
 def handle_initial_message(from_number, user_name, text):
-    # PRIORIDAD 1: Buscar si el mensaje es sobre un producto específico.
+    # ... (código existente, sin cambios)
     product_id, product_data = find_product_by_keywords(text)
     if product_data:
         nombre_producto = product_data.get('nombre', 'nuestro producto')
@@ -299,7 +282,7 @@ def handle_initial_message(from_number, user_name, text):
 
         if url_imagen_principal:
             send_image_message(from_number, url_imagen_principal)
-            time.sleep(1) # Pausa Reducida
+            time.sleep(1)
 
         mensaje_inicial = (
             f"¡Hola {user_name}! 🌞 El *{nombre_producto}* {descripcion_corta}\n\n"
@@ -318,7 +301,6 @@ def handle_initial_message(from_number, user_name, text):
         save_session(from_number, new_session)
         return
 
-    # PRIORIDAD 2: Si no es sobre un producto, buscar si es una pregunta frecuente.
     text_lower = text.lower()
     for key, keywords in FAQ_KEYWORD_MAP.items():
         if any(keyword in text_lower for keyword in keywords):
@@ -327,14 +309,9 @@ def handle_initial_message(from_number, user_name, text):
                 send_text_message(from_number, response_text)
                 return
 
-    # PRIORIDAD 3: Si no es ninguna de las anteriores, dar el saludo general.
     send_text_message(from_number, f"¡Hola {user_name}! 👋🏽✨ Bienvenida a *Daaqui Joyas*. Si deseas información sobre nuestro *Collar Mágico Girasol Radiant*, solo pregunta por él. 😊")
 
-# ==============================================================================
-# 7. LÓGICA DE LA CONVERSACIÓN - ETAPA 2 (FLUJO DE COMPRA)
-# ==============================================================================
 def handle_sales_flow(from_number, text, session):
-    # --- INICIO DEL DETECTOR FAQ PARA FLUJO DE VENTA ---
     text_lower = text.lower()
     for key, keywords in FAQ_KEYWORD_MAP.items():
         if any(keyword in text_lower for keyword in keywords):
@@ -347,13 +324,12 @@ def handle_sales_flow(from_number, text, session):
 
             if response_text:
                 send_text_message(from_number, response_text)
-                time.sleep(1) # Pausa Reducida
+                time.sleep(1)
                 last_question = get_last_question(session.get('state'))
                 if last_question:
                     re_prompt = f"¡Espero haber aclarado tu duda! 😊 Continuando con la coordinación de tu pedido...\n\n{last_question}"
                     send_text_message(from_number, re_prompt)
                 return
-    # --- FIN DEL DETECTOR FAQ ---
     
     if any(keyword in text.lower() for keyword in KEYWORDS_GIRASOL) and session.get('state') not in ['awaiting_occasion_response', 'awaiting_purchase_decision']:
         logger.info(f"Usuario {from_number} está reiniciando el flujo.")
@@ -382,7 +358,7 @@ def handle_sales_flow(from_number, text, session):
         presentacion = detalles.get('empaque', 'viene en una hermosa caja de regalo')
         if url_imagen_empaque:
             send_image_message(from_number, url_imagen_empaque)
-            time.sleep(1) # Pausa Reducida
+            time.sleep(1)
         mensaje_persuasion_1 = (
             "¡Maravillosa elección! ✨ El *Collar Mágico Girasol Radiant* es pura energía. Aquí tienes todos los detalles:\n\n"
             f"💎 *Material:* {material} ¡Hipoalergénico y no se oscurece!\n"
@@ -404,7 +380,7 @@ def handle_sales_flow(from_number, text, session):
             url_imagen_upsell = product_data.get('imagenes', {}).get('upsell')
             if url_imagen_upsell:
                 send_image_message(from_number, url_imagen_upsell)
-                time.sleep(1) # Pausa Reducida
+                time.sleep(1)
 
             upsell_message_1 = (
                 "¡Excelente elección! Pero espera, antes de continuar... por haber decidido llevar tu collar, ¡acabas de desbloquear una oferta exclusiva! ✨\n\n"
@@ -430,8 +406,60 @@ def handle_sales_flow(from_number, text, session):
             delete_session(from_number)
             send_text_message(from_number, "Entendido. Si cambias de opinión, aquí estaré. ¡Que tengas un buen día! 😊")
 
-    # ... (El resto del código de estados no tiene pausas y se mantiene igual)
-    # El código completo con todos los estados está a continuación
+    elif current_state in ['awaiting_lima_payment', 'awaiting_shalom_payment']:
+        if text == "COMPROBANTE_RECIBIDO":
+            guardado_exitoso, sale_data = save_completed_sale_and_customer(session)
+            if guardado_exitoso:
+                guardar_pedido_en_sheet(sale_data)
+                
+                if ADMIN_WHATSAPP_NUMBER:
+                    admin_message = (
+                        f"🎉 ¡Nueva Venta Confirmada! 🎉\n\n"
+                        f"Producto: {sale_data.get('producto_nombre')}\n"
+                        f"Precio: S/ {sale_data.get('precio_venta'):.2f}\n"
+                        f"Tipo: {sale_data.get('tipo_envio')}\n"
+                        f"Adelanto: S/ {sale_data.get('adelanto_recibido'):.2f}\n"
+                        f"Cliente WA ID: {sale_data.get('cliente_id')}\n"
+                        f"Detalles:\n{sale_data.get('detalles_cliente')}"
+                    )
+                    send_text_message(ADMIN_WHATSAPP_NUMBER, admin_message)
+
+                if session.get('tipo_envio') == 'Lima Contra Entrega':
+                    total = sale_data.get('precio_venta', 0)
+                    adelanto = sale_data.get('adelanto_recibido', 0)
+                    restante = total - adelanto
+                    dia_entrega = get_delivery_day_message()
+                    horario = BUSINESS_RULES.get('horario_entrega_lima', 'durante el día')
+                    
+                    mensaje_final = (
+                        "¡Adelanto confirmado! ✨ Hemos agendado tu pedido.\n\n"
+                        "*Resumen Financiero:*\n"
+                        f"💸 Total del pedido: S/ {total:.2f}\n"
+                        f"✅ Adelanto: - S/ {adelanto:.2f}\n"
+                        "--------------------\n"
+                        f"💵 Pagarás al recibir: S/ {restante:.2f}\n\n"
+                        f"🗓️ Lo estarás recibiendo *{dia_entrega}*, en el rango de *{horario}*.\n\n"
+                        "Para garantizar una entrega exitosa, te agradecemos asegurar que alguien esté disponible para recibir tu joya.\n\n"
+                        "¡Gracias por tu compra en Daaqui Joyas! 🎉"
+                    )
+                    send_text_message(from_number, mensaje_final)
+                else: # Shalom
+                    # <<<--- INICIO DEL CAMBIO ---<<<
+                    mensaje_base = "¡Adelanto confirmado! ✨ Hemos agendado tu envío. Te enviaremos tu código de seguimiento por aquí en las próximas 24h hábiles. "
+                    if session.get('tipo_envio') == 'Lima Shalom':
+                        mensaje_final = mensaje_base + "A partir del momento en que recibas tu código, el tiempo de entrega en la agencia es de *1 a 2 días hábiles*."
+                    else: # Provincia Shalom
+                        mensaje_final = mensaje_base + "A partir del momento en que recibas tu código, el tiempo de entrega en la agencia es de *3 a 5 días hábiles*."
+                    # <<<--- FIN DEL CAMBIO ---<<<
+                    send_text_message(from_number, mensaje_final)
+                
+                delete_session(from_number)
+            else:
+                send_text_message(from_number, "¡Uy! Hubo un problema al registrar tu pedido. Un asesor se pondrá en contacto contigo pronto.")
+        else:
+            send_text_message(from_number, "Estoy esperando la *captura de pantalla* de tu pago. 😊")
+            
+    # ... (El resto de los estados de handle_sales_flow se mantienen igual)
     elif current_state == 'awaiting_upsell_decision':
         if 'oferta' in text.lower():
             session['product_name'] = "Oferta 2x Collares Mágicos + Cadenas"
@@ -617,72 +645,10 @@ def handle_sales_flow(from_number, text, session):
             delete_session(from_number)
             send_text_message(from_number, "Entendido. Si cambias de opinión, aquí estaré. ¡Gracias!")
 
-    elif current_state in ['awaiting_lima_payment', 'awaiting_shalom_payment']:
-        if text == "COMPROBANTE_RECIBIDO":
-            guardado_exitoso, sale_data = save_completed_sale_and_customer(session)
-            if guardado_exitoso:
-                guardar_pedido_en_sheet(sale_data)
-                
-                if ADMIN_WHATSAPP_NUMBER:
-                    admin_message = (
-                        f"🎉 ¡Nueva Venta Confirmada! 🎉\n\n"
-                        f"Producto: {sale_data.get('producto_nombre')}\n"
-                        f"Precio: S/ {sale_data.get('precio_venta'):.2f}\n"
-                        f"Tipo: {sale_data.get('tipo_envio')}\n"
-                        f"Adelanto: S/ {sale_data.get('adelanto_recibido'):.2f}\n"
-                        f"Cliente WA ID: {sale_data.get('cliente_id')}\n"
-                        f"Detalles:\n{sale_data.get('detalles_cliente')}"
-                    )
-                    send_text_message(ADMIN_WHATSAPP_NUMBER, admin_message)
-
-                if session.get('tipo_envio') == 'Lima Contra Entrega':
-                    total = sale_data.get('precio_venta', 0)
-                    adelanto = sale_data.get('adelanto_recibido', 0)
-                    restante = total - adelanto
-                    dia_entrega = get_delivery_day_message()
-                    horario = BUSINESS_RULES.get('horario_entrega_lima', 'durante el día')
-                    
-                    mensaje_final = (
-                        "¡Adelanto confirmado! ✨ Hemos agendado tu pedido.\n\n"
-                        "*Resumen Financiero:*\n"
-                        f"💸 Total del pedido: S/ {total:.2f}\n"
-                        f"✅ Adelanto: - S/ {adelanto:.2f}\n"
-                        "--------------------\n"
-                        f"💵 Pagarás al recibir: S/ {restante:.2f}\n\n"
-                        f"🗓️ Lo estarás recibiendo *{dia_entrega}*, en el rango de *{horario}*.\n\n"
-                        "Para garantizar una entrega exitosa, te agradecemos asegurar que alguien esté disponible para recibir tu joya.\n\n"
-                        "¡Gracias por tu compra en Daaqui Joyas! 🎉"
-                    )
-                    send_text_message(from_number, mensaje_final)
-                else: # Shalom
-                    total = sale_data.get('precio_venta', 0)
-                    adelanto = sale_data.get('adelanto_recibido', 0)
-                    restante = total - adelanto
-                    mensaje_final = (
-                        "¡Adelanto confirmado! ✨ Hemos agendado tu envío.\n\n"
-                        "*Resumen Financiero:*\n"
-                        f"💸 Total del pedido: S/ {total:.2f}\n"
-                        f"✅ Adelanto: - S/ {adelanto:.2f}\n"
-                        "--------------------\n"
-                        f"💵 Saldo restante: S/ {restante:.2f}\n\n"
-                        "Te enviaremos tu *código de seguimiento* en las próximas 24h. Recuerda que el saldo restante se debe cancelar una vez que el paquete llegue a la agencia para poderte brindar la clave de recojo.\n\n"
-                        "¡Gracias por tu compra en Daaqui Joyas! 🎉"
-                    )
-                    send_text_message(from_number, mensaje_final)
-                
-                delete_session(from_number)
-            else:
-                send_text_message(from_number, "¡Uy! Hubo un problema al registrar tu pedido. Un asesor se pondrá en contacto contigo pronto.")
-        else:
-            send_text_message(from_number, "Estoy esperando la *captura de pantalla* de tu pago. 😊")
-            
     else:
         send_text_message(from_number, "Estoy un poco confundido. Si deseas reiniciar, escribe 'cancelar'.")
 
-# ==============================================================================
-# 8. WEBHOOK PRINCIPAL Y PROCESADOR DE MENSAJES
-# ==============================================================================
-# ... (Esta sección no cambia)
+
 @app.route('/api/webhook', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
@@ -738,4 +704,4 @@ def process_message(message, contacts):
 
 @app.route('/')
 def home():
-    return jsonify({'status': 'Bot Daaqui Activo - V6.2 - PULIDO FINAL'})
+    return jsonify({'status': 'Bot Daaqui Activo - V6.4 - PAUSAS REDUCIDAS'})
