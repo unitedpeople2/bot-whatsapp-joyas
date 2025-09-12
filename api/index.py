@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # ==========================================================
 # BOT DAAQUI JOYAS - V5 FINAL
-# Corrección de FAQ y reenganche
+# Añade cálculo y guardado de saldo restante
 # ==========================================================
 from flask import Flask, request, jsonify
 import requests
@@ -142,13 +142,17 @@ def save_completed_sale_and_customer(session_data):
     try:
         sale_id = str(uuid.uuid4())
         customer_id = session_data.get('whatsapp_id')
+        
+        precio_total = session_data.get('product_price', 0)
+        adelanto = session_data.get('adelanto', 0)
+        saldo_restante = precio_total - adelanto
 
         sale_data = {
             "fecha": firestore.SERVER_TIMESTAMP,
             "id_venta": sale_id,
             "producto_id": session_data.get('product_id'),
             "producto_nombre": session_data.get('product_name'),
-            "precio_venta": session_data.get('product_price'),
+            "precio_venta": precio_total,
             "tipo_envio": session_data.get('tipo_envio'),
             "metodo_pago": session_data.get('metodo_pago'),
             "provincia": session_data.get('provincia'),
@@ -156,7 +160,8 @@ def save_completed_sale_and_customer(session_data):
             "detalles_cliente": session_data.get('detalles_cliente'),
             "cliente_id": customer_id,
             "estado_pedido": "Adelanto Pagado",
-            "adelanto_recibido": session_data.get('adelanto', 0)
+            "adelanto_recibido": adelanto,
+            "saldo_restante": saldo_restante # <<<--- CAMBIO AQUÍ
         }
         db.collection('ventas').document(sale_id).set(sale_data)
         logger.info(f"Venta {sale_id} guardada en Firestore.")
@@ -242,6 +247,8 @@ def guardar_pedido_en_sheet(sale_data):
             sale_data.get('precio_venta', 0),
             sale_data.get('tipo_envio', 'N/A'),
             sale_data.get('metodo_pago', 'N/A'),
+            sale_data.get('adelanto_recibido', 0),
+            sale_data.get('saldo_restante', 0), # <<<--- CAMBIO AQUÍ
             sale_data.get('provincia', 'N/A'),
             sale_data.get('distrito', 'N/A'),
             sale_data.get('detalles_cliente', 'N/A'),
@@ -344,26 +351,8 @@ def handle_sales_flow(from_number, text, session):
         return
 
     current_state = session.get('state')
-    # ... (El resto del código de handle_sales_flow sigue aquí)
-    # No es necesario mostrarlo todo de nuevo, ya que los cambios principales están arriba.
-    # El código completo se encuentra en el bloque de código final.
-    # ...
+    # ... (El resto del código es idéntico al anterior)
     
-    if current_state == 'awaiting_occasion_response':
-        # ... (código existente)
-        pass # Placeholder
-    # ... y así para todos los demás estados
-    
-    # Este es un placeholder para el resto de la función que ya teníamos.
-    # El código completo se encuentra en el bloque final.
-    # Esta sección se ha omitido aquí para no repetir cientos de líneas.
-    # La lógica de los estados de compra (awaiting_purchase_decision, etc.) sigue intacta
-    # y funcionará en conjunto con el nuevo detector de FAQ.
-    
-    # El código completo está abajo, esta es solo una nota para la IA.
-    # El resto de la función handle_sales_flow está en el código final.
-    
-# (El código completo se presenta a continuación)
     product_id = session.get('product_id')
     if not product_id:
         send_text_message(from_number, "Hubo un problema, no sé qué producto estás comprando. Por favor, empieza de nuevo.")
