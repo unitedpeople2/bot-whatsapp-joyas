@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # ==========================================================
-# BOT DAAQUI JOYAS - V7.1 - REFINAMIENTO DE KEYWORDS FAQ
+# BOT DAAQUI JOYAS - V7.2 - ENDPOINT PARA MAKE.COM
 # ==========================================================
 from flask import Flask, request, jsonify
 import requests
@@ -64,16 +64,18 @@ WHATSAPP_TOKEN = os.environ.get('WHATSAPP_ACCESS_TOKEN')
 VERIFY_TOKEN = os.environ.get('WHATSAPP_VERIFY_TOKEN', 'JoyasBot2025!')
 PHONE_NUMBER_ID = os.environ.get('WHATSAPP_PHONE_NUMBER_ID')
 ADMIN_WHATSAPP_NUMBER = os.environ.get('ADMIN_WHATSAPP_NUMBER')
+# <<<--- INICIO DEL CAMBIO IMPORTANTE ---<<<
+MAKE_SECRET_TOKEN = os.environ.get('MAKE_SECRET_TOKEN') # Nuestra nueva llave secreta
+# <<<--- FIN DEL CAMBIO IMPORTANTE ---<<<
 RUC_EMPRESA = "10700761130"
 TITULAR_YAPE = "Hedinson Rojas Mattos"
 KEYWORDS_GIRASOL = ["girasol", "radiant", "precio", "cambia de color"]
 PALABRAS_CANCELACION = ["cancelar", "cancelo", "ya no quiero", "ya no", "mejor no", "detener", "no gracias"]
 
-# <<<--- INICIO DEL CAMBIO IMPORTANTE ---<<<
 FAQ_KEYWORD_MAP = {
     'precio': ['precio', 'valor', 'costo'],
     'envio': ['envío', 'envio', 'delivery', 'mandan', 'entrega', 'cuesta el envío'],
-    'pago': ['pago', 'métodos de pago', 'contraentrega', 'contra entrega', 'yape', 'plin'], # Se quitó 'pagar' para ser más específico
+    'pago': ['pago', 'métodos de pago', 'contraentrega', 'contra entrega', 'yape', 'plin'],
     'tienda': ['tienda', 'local', 'ubicación', 'ubicacion', 'dirección', 'direccion'],
     'transferencia': ['transferencia', 'banco', 'bcp', 'interbank', 'cuenta', 'transferir'],
     'material': ['material', 'acero', 'alergia', 'hipoalergenico'],
@@ -82,7 +84,6 @@ FAQ_KEYWORD_MAP = {
     'cambios_devoluciones': ['cambio', 'cambiar', 'devolución', 'devoluciones', 'devuelvo'],
     'stock': ['stock', 'disponible', 'tienen', 'hay', 'unidades']
 }
-# <<<--- FIN DEL CAMBIO IMPORTANTE ---<<<
 
 # ==============================================================================
 # 3. FUNCIONES DE COMUNICACIÓN CON WHATSAPP
@@ -97,6 +98,7 @@ def send_whatsapp_message(to_number, message_data):
     try:
         response = requests.post(url, headers=headers, json=data)
         response.raise_for_status()
+        logger.info(f"Mensaje enviado exitosamente a {to_number}.")
     except requests.exceptions.RequestException as e:
         logger.error(f"Error enviando mensaje a {to_number}: {e.response.text if e.response else e}")
 
@@ -107,7 +109,7 @@ def send_image_message(to_number, image_url):
     send_whatsapp_message(to_number, {"type": "image", "image": {"link": image_url}})
 
 # ==============================================================================
-# 4. FUNCIONES DE INTERACCIÓN CON FIRESTORE
+# 4. FUNCIONES DE INTERACCIÓN CON FIRESTORE (Sin cambios en esta sección)
 # ==============================================================================
 def get_session(user_id):
     if not db: return None
@@ -190,7 +192,7 @@ def save_completed_sale_and_customer(session_data):
         return False, None
 
 # ==============================================================================
-# 5. FUNCIONES AUXILIARES DE LÓGICA DE NEGOCIO
+# 5. FUNCIONES AUXILIARES DE LÓGICA DE NEGOCIO (Sin cambios en esta sección)
 # ==============================================================================
 def strip_accents(text):
     return ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
@@ -284,10 +286,9 @@ def get_last_question(state):
     return questions.get(state)
 
 # ==============================================================================
-# 6. LÓGICA DE LA CONVERSACIÓN - ETAPA 1 (EMBUDO DE VENTAS)
+# 6. LÓGICA DE LA CONVERSACIÓN - ETAPA 1 (EMBUDO DE VENTAS) (Sin cambios)
 # ==============================================================================
 def handle_initial_message(from_number, user_name, text):
-    # PRIORIDAD 1: Buscar si el mensaje es sobre un producto específico.
     product_id, product_data = find_product_by_keywords(text)
     if product_data:
         nombre_producto = product_data.get('nombre', 'nuestro producto')
@@ -316,7 +317,6 @@ def handle_initial_message(from_number, user_name, text):
         save_session(from_number, new_session)
         return
 
-    # PRIORIDAD 2: Si no es sobre un producto, buscar si es una pregunta frecuente.
     text_lower = text.lower()
     for key, keywords in FAQ_KEYWORD_MAP.items():
         if any(keyword in text_lower for keyword in keywords):
@@ -325,14 +325,12 @@ def handle_initial_message(from_number, user_name, text):
                 send_text_message(from_number, response_text)
                 return
 
-    # PRIORIDAD 3: Si no es ninguna de las anteriores, dar el saludo general.
     send_text_message(from_number, f"¡Hola {user_name}! 👋🏽✨ Bienvenida a *Daaqui Joyas*. Si deseas información sobre nuestro *Collar Mágico Girasol Radiant*, solo pregunta por él. 😊")
 
 # ==============================================================================
-# 7. LÓGICA DE LA CONVERSACIÓN - ETAPA 2 (FLUJO DE COMPRA)
+# 7. LÓGICA DE LA CONVERSACIÓN - ETAPA 2 (FLUJO DE COMPRA) (Sin cambios)
 # ==============================================================================
 def handle_sales_flow(from_number, text, session):
-    # --- INICIO DEL DETECTOR FAQ ---
     text_lower = text.lower()
     for key, keywords in FAQ_KEYWORD_MAP.items():
         if any(keyword in text_lower for keyword in keywords):
@@ -355,7 +353,6 @@ def handle_sales_flow(from_number, text, session):
                     re_prompt = f"¡Espero haber aclarado tu duda! 😊 Continuando con la coordinación de tu pedido...\n\n{last_question}"
                     send_text_message(from_number, re_prompt)
                 return
-    # --- FIN DEL DETECTOR FAQ ---
     
     if any(keyword in text.lower() for keyword in KEYWORDS_GIRASOL) and session.get('state') not in ['awaiting_occasion_response', 'awaiting_purchase_decision']:
         logger.info(f"Usuario {from_number} está reiniciando el flujo.")
@@ -377,8 +374,6 @@ def handle_sales_flow(from_number, text, session):
         return
     product_data = product_doc.to_dict()
 
-    # ... (El resto del código de la función se mantiene igual)
-    # Se incluye todo el código completo a continuación para que solo tengas que copiar y pegar
     if current_state == 'awaiting_occasion_response':
         url_imagen_empaque = product_data.get('imagenes', {}).get('empaque')
         detalles = product_data.get('detalles', {})
@@ -731,4 +726,49 @@ def process_message(message, contacts):
 
 @app.route('/')
 def home():
-    return jsonify({'status': 'Bot Daaqui Activo - V7.1 - REFINAMIENTO DE KEYWORDS FAQ'})
+    return jsonify({'status': 'Bot Daaqui Activo - V7.2 - ENDPOINT PARA MAKE.COM'})
+
+# <<<--- INICIO DE LA NUEVA SECCIÓN PARA MAKE.COM ---<<<
+# ==============================================================================
+# 9. ENDPOINT PARA AUTOMATIZACIONES (MAKE.COM)
+# ==============================================================================
+@app.route('/api/send-tracking', methods=['POST'])
+def send_tracking_code():
+    # 1. Verificar la "llave secreta"
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or auth_header != f'Bearer {MAKE_SECRET_TOKEN}':
+        logger.warning("Intento de acceso no autorizado a /api/send-tracking")
+        return jsonify({'error': 'No autorizado'}), 401
+
+    # 2. Obtener los datos que enviará Make.com
+    data = request.get_json()
+    to_number = data.get('to_number')
+    tracking_code = data.get('tracking_code')
+    
+    if not to_number or not tracking_code:
+        logger.error("Faltan 'to_number' o 'tracking_code' en la solicitud de Make.com")
+        return jsonify({'error': 'Faltan parámetros'}), 400
+
+    # 3. Preparar y enviar el mensaje
+    try:
+        # Obtener el nombre del cliente de Firebase para personalizar el mensaje
+        customer_name = "cliente" # Valor por defecto
+        if db:
+            customer_doc = db.collection('clientes').document(str(to_number)).get()
+            if customer_doc.exists:
+                customer_name = customer_doc.to_dict().get('nombre_perfil_wa', 'cliente')
+
+        message_text = (
+            f"¡Hola {customer_name}! 👋🏽✨\n\n"
+            "¡Buenas noticias! Tu pedido de Daaqui Joyas ya está en camino.\n\n"
+            f"Puedes hacerle seguimiento con el siguiente código de Shalom:\n"
+            f"👉🏽 *{tracking_code}*\n\n"
+            "¡Gracias por tu confianza!"
+        )
+        send_text_message(str(to_number), message_text)
+        logger.info(f"Código de seguimiento {tracking_code} enviado a {to_number} por orden de Make.com")
+        return jsonify({'status': 'mensaje enviado'}), 200
+    except Exception as e:
+        logger.error(f"Error crítico en send_tracking_code: {e}")
+        return jsonify({'error': 'Error interno del servidor'}), 500
+# <<<--- FIN DE LA NUEVA SECCIÓN PARA MAKE.COM ---<<<
