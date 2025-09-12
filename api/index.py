@@ -168,24 +168,37 @@ def strip_accents(text):
     return ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
 
 def normalize_and_check_district(text):
+    logger.info("--- INICIANDO VERIFICACIÓN DE DISTRITO ---")
     clean_text = re.sub(r'soy de|vivo en|estoy en', '', text, flags=re.IGNORECASE).strip()
     normalized_input = strip_accents(clean_text.lower())
+    logger.info(f"Texto de usuario normalizado: '{normalized_input}'")
 
     abreviaturas = BUSINESS_RULES.get('abreviaturas_distritos', {})
     if normalized_input in abreviaturas:
         normalized_input = strip_accents(abreviaturas[normalized_input])
+        logger.info(f"Abreviatura encontrada. Nuevo texto normalizado: '{normalized_input}'")
 
     distritos_cobertura = BUSINESS_RULES.get('distritos_cobertura_delivery', [])
+    logger.info(f"Verificando contra {len(distritos_cobertura)} distritos CON cobertura.")
     for distrito in distritos_cobertura:
-        if normalized_input in strip_accents(distrito.lower()):
+        normalized_distrito_db = strip_accents(distrito.lower())
+        logger.info(f"Comparando '{normalized_input}' con '{normalized_distrito_db}'")
+        if normalized_input in normalized_distrito_db:
+            logger.info("¡COINCIDENCIA ENCONTRADA (CON COBERTURA)!")
             return distrito.title(), 'CON_COBERTURA'
 
     distritos_totales = BUSINESS_RULES.get('distritos_lima_total', [])
+    logger.info(f"Verificando contra {len(distritos_totales)} distritos SIN cobertura.")
     for distrito in distritos_totales:
-        if normalized_input in strip_accents(distrito.lower()):
+        normalized_distrito_db = strip_accents(distrito.lower())
+        logger.info(f"Comparando '{normalized_input}' con '{normalized_distrito_db}'")
+        if normalized_input in normalized_distrito_db:
+            logger.info("¡COINCIDENCIA ENCONTRADA (SIN COBERTURA)!")
             return distrito.title(), 'SIN_COBERTURA'
             
+    logger.info("--- VERIFICACIÓN FINALIZADA: NO SE ENCONTRÓ COINCIDENCIA ---")
     return None, 'NO_ENCONTRADO'
+
 
 def parse_province_district(text):
     clean_text = re.sub(r'soy de|vivo en|mi ciudad es|el distrito es', '', text, flags=re.IGNORECASE).strip()
