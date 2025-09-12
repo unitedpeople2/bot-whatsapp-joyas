@@ -373,7 +373,7 @@ def handle_sales_flow(from_number, text, session):
         elif 'provincia' in texto_limpio:
             session['state'] = 'awaiting_province_district'
             save_session(from_number, session)
-            send_text_message(from_number, "¡Entendido! Para continuar, por favor, indícame tu *provincia y distrito*. ✍🏽\n\n📝 Ej: Arequipa, Arequipa")
+            send_text_message(from_number, "¡Entendido! Para continuar, por favor, indícame tu *provincia y distrito*. ✍🏽\n\n📝 *Ej: Arequipa, Arequipa*")
         else:
             send_text_message(from_number, "No te entendí bien. Por favor, dime si tu envío es para *Lima* o para *provincia*.")
     
@@ -430,12 +430,12 @@ def handle_sales_flow(from_number, text, session):
         
         resumen = (
             "¡Gracias! Revisa que todo esté correcto para proceder:\n\n"
-            "**Resumen del Pedido**\n"
+            "*Resumen del Pedido*\n"
             f"💎 {session.get('product_name', '')}\n"
             f"💵 Total: S/ {session.get('product_price', 0):.2f}\n"
             f"🚚 Envío: {session.get('distrito', session.get('provincia', ''))} - ¡Totalmente Gratis!\n"
             f"💳 Pago: {session.get('metodo_pago', 'No definido')}\n\n"
-            "**Datos de Entrega**\n"
+            "*Datos de Entrega*\n"
             f"{session.get('detalles_cliente', '')}\n\n"
             "¿Confirmas que todo es correcto? (Sí/No)"
         )
@@ -562,11 +562,11 @@ def handle_sales_flow(from_number, text, session):
                     
                     mensaje_final = (
                         "¡Adelanto confirmado! ✨ Hemos agendado tu pedido.\n\n"
-                        "**Resumen Financiero:**\n"
-                        f"*💸 Total del pedido: S/ {total:.2f}*\n"
-                        f"*✅ Adelanto: - S/ {adelanto:.2f}*\n"
-                        "*--------------------*\n"
-                        f"*💵 Pagarás al recibir: S/ {restante:.2f}*\n\n"
+                        "*Resumen Financiero:*\n"
+                        f"💸 Total del pedido: S/ {total:.2f}\n"
+                        f"✅ Adelanto: - S/ {adelanto:.2f}\n"
+                        "--------------------\n"
+                        f"💵 Pagarás al recibir: S/ {restante:.2f}\n\n"
                         f"🗓️ Lo estarás recibiendo *{dia_entrega}*, en el rango de *{horario}*.\n\n"
                         "Para garantizar una entrega exitosa, te agradecemos asegurar que alguien esté disponible para recibir tu joya.\n\n"
                         "¡Gracias por tu compra en Daaqui Joyas! 🎉"
@@ -578,11 +578,11 @@ def handle_sales_flow(from_number, text, session):
                     restante = total - adelanto
                     mensaje_final = (
                         "¡Adelanto confirmado! ✨ Hemos agendado tu envío.\n\n"
-                        "**Resumen Financiero:**\n"
-                        f"*💸 Total del pedido: S/ {total:.2f}*\n"
-                        f"*✅ Adelanto: - S/ {adelanto:.2f}*\n"
-                        "*--------------------*\n"
-                        f"*💵 Saldo restante: S/ {restante:.2f}*\n\n"
+                        "*Resumen Financiero:*\n"
+                        f"💸 Total del pedido: S/ {total:.2f}\n"
+                        f"✅ Adelanto: - S/ {adelanto:.2f}\n"
+                        "--------------------\n"
+                        f"💵 Saldo restante: S/ {restante:.2f}\n\n"
                         "Te enviaremos tu *código de seguimiento* en las próximas 24h. Recuerda que el saldo restante se debe cancelar una vez que el paquete llegue a la agencia para poderte brindar la clave de recojo.\n\n"
                         "¡Gracias por tu compra en Daaqui Joyas! 🎉"
                     )
