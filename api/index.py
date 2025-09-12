@@ -334,7 +334,6 @@ def handle_sales_flow(from_number, text, session):
             send_text_message(from_number, "Entendido. Si cambias de opinión, aquí estaré. ¡Que tengas un buen día! 😊")
 
     elif current_state == 'awaiting_upsell_decision':
-        # ===== INICIO DE LA CORRECCIÓN DE CONSISTENCIA =====
         oferta_upsell = product_data.get('oferta_upsell', {})
         if 'oferta' in text.lower():
             session['product_name'] = oferta_upsell.get('nombre_producto_oferta', session.get('product_name'))
@@ -347,7 +346,6 @@ def handle_sales_flow(from_number, text, session):
         
         session['state'] = 'awaiting_location'
         save_session(from_number, session)
-        # ===== FIN DE LA CORRECCIÓN DE CONSISTENCIA =====
         send_text_message(from_number, "Para empezar a coordinar el envío, por favor, dime: ¿eres de *Lima* o de *provincia*?")
 
     elif current_state == 'awaiting_location':
@@ -631,4 +629,4 @@ def process_message(message, contacts):
 
 @app.route('/')
 def home():
-    return jsonify({'status': 'PRUEBA_DEPLOY_123_EXITOSA'})
+    return jsonify({'status': 'Bot Daaqui Activo - V5 Definitivo'})
