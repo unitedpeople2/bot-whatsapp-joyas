@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # ==========================================================
 # BOT DAAQUI JOYAS - V5 FINAL
-# Corrección de abreviaturas
+# Módulo de FAQ implementado
 # ==========================================================
 from flask import Flask, request, jsonify
 import requests
@@ -27,6 +27,7 @@ logger = getLogger(__name__)
 # ==========================================================
 db = None
 BUSINESS_RULES = {}
+FAQ_RESPONSES = {}
 try:
     service_account_info_str = os.environ.get('FIREBASE_SERVICE_ACCOUNT_JSON')
     if service_account_info_str:
@@ -43,6 +44,13 @@ try:
             logger.info("✅ Reglas del negocio cargadas desde Firestore.")
         else:
             logger.error("❌ Documento de reglas de envío no encontrado en Firestore.")
+
+        faq_doc = db.collection('configuracion').document('respuestas_faq').get()
+        if faq_doc.exists:
+            FAQ_RESPONSES = faq_doc.to_dict()
+            logger.info("✅ Respuestas FAQ cargadas desde Firestore.")
+        else:
+            logger.error("❌ Documento de respuestas_faq no encontrado en Firestore.")
     else:
         logger.error("❌ La variable de entorno FIREBASE_SERVICE_ACCOUNT_JSON no está configurada.")
 except Exception as e:
@@ -61,6 +69,13 @@ RUC_EMPRESA = "10700761130"
 TITULAR_YAPE = "Hedinson Rojas Mattos"
 KEYWORDS_GIRASOL = ["girasol", "radiant", "precio", "cambia de color"]
 PALABRAS_CANCELACION = ["cancelar", "cancelo", "ya no quiero", "ya no", "mejor no", "detener", "no gracias"]
+
+FAQ_KEYWORD_MAP = {
+    'precio': ['precio', 'cuesta', 'valor', 'costo'],
+    'envio': ['envío', 'envio', 'delivery', 'mandan', 'entrega'],
+    'pago': ['pago', 'pagar', 'contraentrega', 'contra entrega', 'yape', 'plin'],
+    'tienda': ['tienda', 'local', 'ubicación', 'ubicacion', 'dirección', 'direccion']
+}
 
 # ==============================================================================
 # 3. FUNCIONES DE COMUNICACIÓN CON WHATSAPP
@@ -173,11 +188,10 @@ def normalize_and_check_district(text):
     normalized_input = strip_accents(clean_text.lower())
 
     abreviaturas = BUSINESS_RULES.get('abreviaturas_distritos', {})
-    # Bucle para encontrar si alguna abreviatura está en el texto del usuario
     for abbr, full_name in abreviaturas.items():
         if abbr in normalized_input:
             normalized_input = strip_accents(full_name.lower())
-            break  # Se encontró una, se reemplaza y se rompe el bucle
+            break
 
     distritos_cobertura = BUSINESS_RULES.get('distritos_cobertura_delivery', [])
     for distrito in distritos_cobertura:
@@ -240,10 +254,33 @@ def guardar_pedido_en_sheet(sale_data):
         logger.error(f"[Sheets] ERROR INESPERADO: {e}")
         return False
 
+def get_last_question(state):
+    questions = {
+        "awaiting_occasion_response": "Cuéntame, ¿es un tesoro para ti o un regalo para alguien especial?",
+        "awaiting_purchase_decision": "¿Te gustaría coordinar tu pedido ahora para asegurar el tuyo? (Sí/No)",
+        "awaiting_upsell_decision": "Para continuar, por favor, respóndeme con una de estas dos palabras:\n👉🏽 Escribe *oferta* para ampliar tu pedido.\n👉🏽 Escribe *continuar* para llevar solo un collar.",
+        "awaiting_location": "Para empezar a coordinar el envío, por favor, dime: ¿eres de *Lima* o de *provincia*?",
+        "awaiting_lima_district": "¡Genial! ✨ Para saber qué tipo de envío te corresponde, por favor, dime: ¿en qué distrito te encuentras? 📍",
+        "awaiting_province_district": "¡Entendido! Para continuar, por favor, indícame tu *provincia y distrito*. ✍🏽\n\n📝 *Ej: Arequipa, Arequipa*",
+        "awaiting_shalom_agreement": "¿Estás de acuerdo con el adelanto? (Sí/No)",
+        "awaiting_lima_payment_agreement": "¿Procedemos con la confirmación del adelanto? (Sí/No)",
+    }
+    return questions.get(state)
+
 # ==============================================================================
 # 6. LÓGICA DE LA CONVERSACIÓN - ETAPA 1 (EMBUDO DE VENTAS)
 # ==============================================================================
 def handle_initial_message(from_number, user_name, text):
+    # --- INICIO DEL DETECTOR FAQ PARA MENSAJES INICIALES ---
+    text_lower = text.lower()
+    for key, keywords in FAQ_KEYWORD_MAP.items():
+        if any(keyword in text_lower for keyword in keywords):
+            response_text = FAQ_RESPONSES.get(key)
+            if response_text:
+                send_text_message(from_number, response_text)
+                return
+    # --- FIN DEL DETECTOR FAQ ---
+
     product_id, product_data = find_product_by_keywords(text)
     if product_data:
         nombre_producto = product_data.get('nombre', 'nuestro producto')
@@ -277,6 +314,29 @@ def handle_initial_message(from_number, user_name, text):
 # 7. LÓGICA DE LA CONVERSACIÓN - ETAPA 2 (FLUJO DE COMPRA)
 # ==============================================================================
 def handle_sales_flow(from_number, text, session):
+    # --- INICIO DEL DETECTOR FAQ PARA FLUJO DE VENTA ---
+    text_lower = text.lower()
+    for key, keywords in FAQ_KEYWORD_MAP.items():
+        if any(keyword in text_lower for keyword in keywords):
+            # Lógica de precio inteligente
+            if key == 'precio' and session.get('product_name'):
+                product_name = session.get('product_name')
+                product_price = session.get('product_price')
+                response_text = f"¡Claro! El precio actual de tu pedido (*{product_name}*) es de *S/ {product_price:.2f}*, con envío gratis. 🚚"
+            else:
+                response_text = FAQ_RESPONSES.get(key)
+
+            if response_text:
+                send_text_message(from_number, response_text)
+                time.sleep(1)
+                # Re-enganchar al cliente
+                last_question = get_last_question(session.get('state'))
+                if last_question:
+                    re_prompt = f"Continuando donde nos quedamos... {last_question}"
+                    send_text_message(from_number, re_prompt)
+                return
+    # --- FIN DEL DETECTOR FAQ ---
+    
     if any(keyword in text.lower() for keyword in KEYWORDS_GIRASOL) and session.get('state') not in ['awaiting_occasion_response', 'awaiting_purchase_decision']:
         logger.info(f"Usuario {from_number} está reiniciando el flujo.")
         delete_session(from_number)
