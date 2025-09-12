@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # ==========================================================
-# BOT DAAQUI JOYAS - V6 - CON MODULO FAQ
+# BOT DAAQUI JOYAS - V6.1 - FAQ FINAL
 # ==========================================================
 from flask import Flask, request, jsonify
 import requests
@@ -76,7 +76,8 @@ FAQ_KEYWORD_MAP = {
     'tienda': ['tienda', 'local', 'ubicación', 'ubicacion', 'dirección', 'direccion'],
     'material': ['material', 'acero', 'alergia', 'hipoalergenico'],
     'cuidados': ['mojar', 'agua', 'oxida', 'negro', 'cuidar', 'limpiar', 'cuidados'],
-    'garantia': ['garantía', 'garantia', 'falla', 'defectuoso', 'roto', 'cambio', 'cambiar']
+    'garantia': ['garantía', 'garantia', 'falla', 'defectuoso', 'roto', 'cambio', 'cambiar'],
+    'transferencia': ['transferencia', 'banco', 'bcp', 'interbank', 'cuenta', 'transferir']
 }
 
 # ==============================================================================
@@ -366,6 +367,12 @@ def handle_sales_flow(from_number, text, session):
         return
     product_data = product_doc.to_dict()
 
+    if current_state == 'awaiting_occasion_response':
+        # ... El resto de la lógica de estados sigue aquí ...
+        # Se omite para brevedad, pero está en el código final.
+        pass
+    
+    # El código completo con todos los estados se incluye para la copia final
     if current_state == 'awaiting_occasion_response':
         url_imagen_empaque = product_data.get('imagenes', {}).get('empaque')
         detalles = product_data.get('detalles', {})
@@ -727,4 +734,4 @@ def process_message(message, contacts):
 
 @app.route('/')
 def home():
-    return jsonify({'status': 'Bot Daaqui Activo - V5 Definitivo'})
+    return jsonify({'status': 'Bot Daaqui Activo - V6.1 - FAQ FINAL'})
