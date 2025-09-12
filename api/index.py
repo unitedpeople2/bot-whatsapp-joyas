@@ -255,8 +255,7 @@ def handle_initial_message(from_number, user_name, text):
         new_session = {
             "state": "awaiting_occasion_response", "product_id": product_id,
             "product_name": nombre_producto, "product_price": float(precio),
-            "user_name": user_name, "whatsapp_id": from_number,
-            "is_upsell": False
+            "user_name": user_name, "whatsapp_id": from_number
         }
         save_session(from_number, new_session)
     else:
@@ -315,14 +314,19 @@ def handle_sales_flow(from_number, text, session):
             oferta_upsell = product_data.get('oferta_upsell')
             if oferta_upsell and oferta_upsell.get('activo'):
                 url_imagen_upsell = product_data.get('imagenes', {}).get('upsell')
+                
                 if url_imagen_upsell:
                     send_image_message(from_number, url_imagen_upsell)
                     time.sleep(2)
+                
+                # CORRECCIÓN: Se reemplaza '\\n' por '\n' para asegurar los saltos de línea
                 upsell_message_1 = oferta_upsell.get('bloque_texto_1', '').replace('\\n', '\n')
                 send_text_message(from_number, upsell_message_1)
                 time.sleep(2)
+                
                 upsell_message_2 = oferta_upsell.get('bloque_texto_2', '').replace('\\n', '\n')
                 send_text_message(from_number, upsell_message_2)
+                
                 session['state'] = 'awaiting_upsell_decision'
                 save_session(from_number, session)
             else:
@@ -338,10 +342,8 @@ def handle_sales_flow(from_number, text, session):
             oferta_upsell = product_data.get('oferta_upsell', {})
             session['product_name'] = oferta_upsell.get('nombre_producto_oferta', session.get('product_name'))
             session['product_price'] = float(oferta_upsell.get('precio_oferta', session.get('product_price')))
-            session['is_upsell'] = True
             send_text_message(from_number, "¡Genial! Has elegido la oferta. ✨")
         else: 
-            session['is_upsell'] = False
             send_text_message(from_number, "¡Perfecto! Continuamos con tu collar individual. ✨")
         
         session['state'] = 'awaiting_location'
@@ -365,7 +367,7 @@ def handle_sales_flow(from_number, text, session):
         provincia, distrito = parse_province_district(text)
         session.update({
             "state": "awaiting_shalom_agreement", "tipo_envio": "Provincia Shalom", 
-            "metodo_pago": "Adelanto y Saldo (Yape/Plin)", "provincia": provincia, "distrito": distrito
+            "metodo_pago": "Adelanto y Saldo", "provincia": provincia, "distrito": distrito
         })
         save_session(from_number, session)
         adelanto = BUSINESS_RULES.get('adelanto_shalom', 20)
@@ -383,19 +385,19 @@ def handle_sales_flow(from_number, text, session):
             if status == 'CON_COBERTURA':
                 session.update({
                     "state": "awaiting_delivery_details", "tipo_envio": "Lima Contra Entrega",
-                    "metodo_pago": "Contra Entrega (Efectivo/Yape/Plin)"
+                    "metodo_pago": "Contra Entrega"
                 })
                 save_session(from_number, session)
                 mensaje = (
                     "¡Excelente! Tenemos cobertura en *{distrito}*. 🏙️\n\n"
-                    "Para registrar tu pedido, por favor, envíame en *un solo mensaje* tu *Nombre Completo*, *Dirección exacta* y una *Referencia* (muy importante para el motorizado).\n\n"
+                    "Para registrar tu pedido, por favor, envíame en *un solo mensaje* tu *Nombre Completo*, *Dirección exacta* y una *Referencia*.\n\n"
                     "📝 *Ej: Ana Pérez, Jr. Gamarra 123, Depto 501, La Victoria. Al lado de la farmacia Inkafarma.*"
                 )
                 send_text_message(from_number, mensaje.format(distrito=distrito))
             elif status == 'SIN_COBERTURA':
                 session.update({
                     "state": "awaiting_shalom_agreement", "tipo_envio": "Lima Shalom",
-                    "metodo_pago": "Adelanto y Saldo (Yape/Plin)", "distrito": distrito
+                    "metodo_pago": "Adelanto y Saldo", "distrito": distrito
                 })
                 save_session(from_number, session)
                 adelanto = BUSINESS_RULES.get('adelanto_shalom', 20)
@@ -408,18 +410,10 @@ def handle_sales_flow(from_number, text, session):
             send_text_message(from_number, "No pude reconocer ese distrito. Por favor, intenta escribirlo de nuevo.")
 
     elif current_state in ['awaiting_delivery_details', 'awaiting_shalom_details']:
-        # ===== LA SOLUCIÓN DEFINITIVA APLICA AQUÍ =====
         session['detalles_cliente'] = text
         session['state'] = 'awaiting_final_confirmation'
-        
-        # Se asegura de que el precio sea el correcto ANTES de guardar y mostrar
-        if session.get('is_upsell'):
-            oferta_upsell = product_data.get('oferta_upsell', {})
-            session['product_price'] = float(oferta_upsell.get('precio_oferta', session.get('product_price')))
-        
         save_session(from_number, session)
-        # ===== FIN DE LA SOLUCIÓN =====
-
+        
         resumen = (
             "¡Gracias! Revisa que todo esté correcto para proceder:\n\n"
             "**Resumen del Pedido:**\n"
@@ -630,3 +624,5 @@ def process_message(message, contacts):
 @app.route('/')
 def home():
     return jsonify({'status': 'Bot Daaqui Activo - V5 Definitivo'})
+}
+
