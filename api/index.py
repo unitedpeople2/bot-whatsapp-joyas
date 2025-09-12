@@ -334,17 +334,20 @@ def handle_sales_flow(from_number, text, session):
             send_text_message(from_number, "Entendido. Si cambias de opinión, aquí estaré. ¡Que tengas un buen día! 😊")
 
     elif current_state == 'awaiting_upsell_decision':
-        updates_to_session = {'state': 'awaiting_location'}
+        # ===== INICIO DE LA CORRECCIÓN DE CONSISTENCIA =====
         oferta_upsell = product_data.get('oferta_upsell', {})
         if 'oferta' in text.lower():
-            updates_to_session['product_name'] = oferta_upsell.get('nombre_producto_oferta', session.get('product_name'))
-            updates_to_session['product_price'] = float(oferta_upsell.get('precio_oferta', session.get('product_price')))
-            updates_to_session['is_upsell'] = True
+            session['product_name'] = oferta_upsell.get('nombre_producto_oferta', session.get('product_name'))
+            session['product_price'] = float(oferta_upsell.get('precio_oferta', session.get('product_price')))
+            session['is_upsell'] = True
             send_text_message(from_number, "¡Genial! Has elegido la oferta. ✨")
         else: 
-            updates_to_session['is_upsell'] = False
+            session['is_upsell'] = False
             send_text_message(from_number, "¡Perfecto! Continuamos con tu collar individual. ✨")
-        save_session(from_number, updates_to_session)
+        
+        session['state'] = 'awaiting_location'
+        save_session(from_number, session)
+        # ===== FIN DE LA CORRECCIÓN DE CONSISTENCIA =====
         send_text_message(from_number, "Para empezar a coordinar el envío, por favor, dime: ¿eres de *Lima* o de *provincia*?")
 
     elif current_state == 'awaiting_location':
@@ -407,16 +410,17 @@ def handle_sales_flow(from_number, text, session):
             send_text_message(from_number, "No pude reconocer ese distrito. Por favor, intenta escribirlo de nuevo.")
 
     elif current_state in ['awaiting_delivery_details', 'awaiting_shalom_details']:
-        # ===== INICIO DE LA CORRECCIÓN BASADA EN TU ANÁLISIS =====
+        # ===== INICIO DE LA CORRECCIÓN FINAL =====
         session['detalles_cliente'] = text
         
+        # Lógica robusta para asegurar que el precio sea el correcto ANTES de guardar
         if session.get('is_upsell'):
             oferta_upsell = product_data.get('oferta_upsell', {})
             session['product_price'] = float(oferta_upsell.get('precio_oferta', session.get('product_price')))
         
         session['state'] = 'awaiting_final_confirmation'
         save_session(from_number, session)
-        # ===== FIN DE LA CORRECCIÓN =====
+        # ===== FIN DE LA CORRECCIÓN FINAL =====
 
         resumen = (
             "¡Gracias! Revisa que todo esté correcto para proceder:\n\n"
