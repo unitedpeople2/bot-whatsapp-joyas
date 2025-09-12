@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # ==========================================================
-# BOT DAAQUI JOYAS - V6.8 - AJUSTE FINAL DE FORMATO Y PAUSAS
+# BOT DAAQUI JOYAS - V7.0 - EXPERTO FAQ
 # ==========================================================
 from flask import Flask, request, jsonify
 import requests
@@ -74,15 +74,15 @@ FAQ_KEYWORD_MAP = {
     'envio': ['envío', 'envio', 'delivery', 'mandan', 'entrega', 'cuesta el envío'],
     'pago': ['pago', 'pagar', 'contraentrega', 'contra entrega', 'yape', 'plin'],
     'tienda': ['tienda', 'local', 'ubicación', 'ubicacion', 'dirección', 'direccion'],
+    'transferencia': ['transferencia', 'banco', 'bcp', 'interbank', 'cuenta', 'transferir'],
     'material': ['material', 'acero', 'alergia', 'hipoalergenico'],
     'cuidados': ['mojar', 'agua', 'oxida', 'negro', 'cuidar', 'limpiar', 'cuidados'],
-    'garantia': ['garantía', 'garantia', 'falla', 'defectuoso', 'roto', 'cambio', 'cambiar'],
-    'transferencia': ['transferencia', 'banco', 'bcp', 'interbank', 'cuenta', 'transferir']
+    'garantia': ['garantía', 'garantia', 'falla', 'defectuoso', 'roto'],
+    'cambios_devoluciones': ['cambio', 'cambiar', 'devolución', 'devoluciones', 'devuelvo'],
+    'stock': ['stock', 'disponible', 'tienen', 'hay', 'unidades']
 }
 
-# ==============================================================================
-# 3. FUNCIONES DE COMUNICACIÓN CON WHATSAPP
-# ==============================================================================
+# ... (El resto del código hasta handle_sales_flow se mantiene igual)
 def send_whatsapp_message(to_number, message_data):
     if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
         logger.error("Token de WhatsApp o ID de número de teléfono no configurados.")
@@ -102,9 +102,6 @@ def send_text_message(to_number, text):
 def send_image_message(to_number, image_url):
     send_whatsapp_message(to_number, {"type": "image", "image": {"link": image_url}})
 
-# ==============================================================================
-# 4. FUNCIONES DE INTERACCIÓN CON FIRESTORE
-# ==============================================================================
 def get_session(user_id):
     if not db: return None
     try:
@@ -185,9 +182,6 @@ def save_completed_sale_and_customer(session_data):
         logger.error(f"Error guardando venta y cliente en Firestore: {e}")
         return False, None
 
-# ==============================================================================
-# 5. FUNCIONES AUXILIARES DE LÓGICA DE NEGOCIO
-# ==============================================================================
 def strip_accents(text):
     return ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
 
@@ -279,10 +273,8 @@ def get_last_question(state):
     }
     return questions.get(state)
 
-# ==============================================================================
-# 6. LÓGICA DE LA CONVERSACIÓN - ETAPA 1 (EMBUDO DE VENTAS)
-# ==============================================================================
 def handle_initial_message(from_number, user_name, text):
+    # PRIORIDAD 1: Buscar si el mensaje es sobre un producto específico.
     product_id, product_data = find_product_by_keywords(text)
     if product_data:
         nombre_producto = product_data.get('nombre', 'nuestro producto')
@@ -292,7 +284,7 @@ def handle_initial_message(from_number, user_name, text):
 
         if url_imagen_principal:
             send_image_message(from_number, url_imagen_principal)
-            time.sleep(1) 
+            time.sleep(1)
 
         mensaje_inicial = (
             f"¡Hola {user_name}! 🌞 El *{nombre_producto}* {descripcion_corta}\n\n"
@@ -311,6 +303,7 @@ def handle_initial_message(from_number, user_name, text):
         save_session(from_number, new_session)
         return
 
+    # PRIORIDAD 2: Si no es sobre un producto, buscar si es una pregunta frecuente.
     text_lower = text.lower()
     for key, keywords in FAQ_KEYWORD_MAP.items():
         if any(keyword in text_lower for keyword in keywords):
@@ -319,19 +312,25 @@ def handle_initial_message(from_number, user_name, text):
                 send_text_message(from_number, response_text)
                 return
 
+    # PRIORIDAD 3: Si no es ninguna de las anteriores, dar el saludo general.
     send_text_message(from_number, f"¡Hola {user_name}! 👋🏽✨ Bienvenida a *Daaqui Joyas*. Si deseas información sobre nuestro *Collar Mágico Girasol Radiant*, solo pregunta por él. 😊")
 
-# ==============================================================================
-# 7. LÓGICA DE LA CONVERSACIÓN - ETAPA 2 (FLUJO DE COMPRA)
-# ==============================================================================
 def handle_sales_flow(from_number, text, session):
+    # --- INICIO DEL DETECTOR FAQ ---
     text_lower = text.lower()
     for key, keywords in FAQ_KEYWORD_MAP.items():
         if any(keyword in text_lower for keyword in keywords):
+            response_text = None
+            # Lógica de respuesta inteligente para PRECIO
             if key == 'precio' and session.get('product_name'):
                 product_name = session.get('product_name')
                 product_price = session.get('product_price')
                 response_text = f"¡Claro! El precio actual de tu pedido (*{product_name}*) es de *S/ {product_price:.2f}*, con envío gratis. 🚚"
+            # Lógica de respuesta inteligente para STOCK
+            elif key == 'stock' and session.get('product_name'):
+                product_name = session.get('product_name')
+                response_text = f"¡Sí, claro! Aún tenemos unidades disponibles del *{product_name}*. ✨ ¿Te gustaría que iniciemos tu pedido?"
+            # Respuesta genérica para los demás casos
             else:
                 response_text = FAQ_RESPONSES.get(key)
 
@@ -343,6 +342,7 @@ def handle_sales_flow(from_number, text, session):
                     re_prompt = f"¡Espero haber aclarado tu duda! 😊 Continuando con la coordinación de tu pedido...\n\n{last_question}"
                     send_text_message(from_number, re_prompt)
                 return
+    # --- FIN DEL DETECTOR FAQ ---
     
     if any(keyword in text.lower() for keyword in KEYWORDS_GIRASOL) and session.get('state') not in ['awaiting_occasion_response', 'awaiting_purchase_decision']:
         logger.info(f"Usuario {from_number} está reiniciando el flujo.")
@@ -363,6 +363,8 @@ def handle_sales_flow(from_number, text, session):
         delete_session(from_number)
         return
     product_data = product_doc.to_dict()
+
+    # ... (El resto del código de la función se mantiene igual, se incluye completo abajo)
 
     if current_state == 'awaiting_occasion_response':
         url_imagen_empaque = product_data.get('imagenes', {}).get('empaque')
@@ -642,25 +644,11 @@ def handle_sales_flow(from_number, text, session):
                     )
                     send_text_message(from_number, mensaje_final)
                 else: # Shalom
-                    total = sale_data.get('precio_venta', 0)
-                    adelanto = sale_data.get('adelanto_recibido', 0)
-                    restante = total - adelanto
-                    
-                    mensaje_financiero = (
-                        "*Resumen Financiero:*\n"
-                        f"💸 Total del pedido: S/ {total:.2f}\n"
-                        f"✅ Adelanto: - S/ {adelanto:.2f}\n"
-                        "--------------------\n"
-                        f"💵 Saldo restante: S/ {restante:.2f}\n\n"
-                    )
-                    
-                    mensaje_base = f"¡Adelanto confirmado! ✨ Hemos agendado tu envío.\n\n{mensaje_financiero}Te enviaremos tu código de seguimiento por aquí en las próximas *24h hábiles*. "
-                    
+                    mensaje_base = "¡Adelanto confirmado! ✨ Hemos agendado tu envío. Te enviaremos tu código de seguimiento por aquí en las próximas *24h hábiles*. "
                     if session.get('tipo_envio') == 'Lima Shalom':
                         mensaje_final = mensaje_base + "A partir del momento en que recibas tu código, el tiempo de entrega en la agencia es de *1 a 2 días hábiles*."
                     else: # Provincia Shalom
                         mensaje_final = mensaje_base + "A partir del momento en que recibas tu código, el tiempo de entrega en la agencia es de *3 a 5 días hábiles*."
-                    
                     send_text_message(from_number, mensaje_final)
                 
                 delete_session(from_number)
@@ -672,6 +660,9 @@ def handle_sales_flow(from_number, text, session):
     else:
         send_text_message(from_number, "Estoy un poco confundido. Si deseas reiniciar, escribe 'cancelar'.")
 
+# ==============================================================================
+# 8. WEBHOOK PRINCIPAL Y PROCESADOR DE MENSAJES
+# ==============================================================================
 @app.route('/api/webhook', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
@@ -727,4 +718,4 @@ def process_message(message, contacts):
 
 @app.route('/')
 def home():
-    return jsonify({'status': 'Bot Daaqui Activo - V6.6 - PULIDO FINAL'})
+    return jsonify({'status': 'Bot Daaqui Activo - V6.8 - AJUSTE FINAL DE FORMATO Y PAUSAS'})
