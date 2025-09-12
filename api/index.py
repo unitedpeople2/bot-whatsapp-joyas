@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # ==========================================================
-# BOT DAAQUI JOYAS - V6.7 - CORRECCIÓN CRÍTICA DE ESTADO
+# BOT DAAQUI JOYAS - V6.8 - AJUSTE FINAL DE FORMATO Y PAUSAS
 # ==========================================================
 from flask import Flask, request, jsonify
 import requests
@@ -283,7 +283,6 @@ def get_last_question(state):
 # 6. LÓGICA DE LA CONVERSACIÓN - ETAPA 1 (EMBUDO DE VENTAS)
 # ==============================================================================
 def handle_initial_message(from_number, user_name, text):
-    # PRIORIDAD 1: Buscar si el mensaje es sobre un producto específico.
     product_id, product_data = find_product_by_keywords(text)
     if product_data:
         nombre_producto = product_data.get('nombre', 'nuestro producto')
@@ -293,6 +292,7 @@ def handle_initial_message(from_number, user_name, text):
 
         if url_imagen_principal:
             send_image_message(from_number, url_imagen_principal)
+            time.sleep(1) 
 
         mensaje_inicial = (
             f"¡Hola {user_name}! 🌞 El *{nombre_producto}* {descripcion_corta}\n\n"
@@ -311,7 +311,6 @@ def handle_initial_message(from_number, user_name, text):
         save_session(from_number, new_session)
         return
 
-    # PRIORIDAD 2: Si no es sobre un producto, buscar si es una pregunta frecuente.
     text_lower = text.lower()
     for key, keywords in FAQ_KEYWORD_MAP.items():
         if any(keyword in text_lower for keyword in keywords):
@@ -320,14 +319,12 @@ def handle_initial_message(from_number, user_name, text):
                 send_text_message(from_number, response_text)
                 return
 
-    # PRIORIDAD 3: Si no es ninguna de las anteriores, dar el saludo general.
     send_text_message(from_number, f"¡Hola {user_name}! 👋🏽✨ Bienvenida a *Daaqui Joyas*. Si deseas información sobre nuestro *Collar Mágico Girasol Radiant*, solo pregunta por él. 😊")
 
 # ==============================================================================
 # 7. LÓGICA DE LA CONVERSACIÓN - ETAPA 2 (FLUJO DE COMPRA)
 # ==============================================================================
 def handle_sales_flow(from_number, text, session):
-    # --- INICIO DEL DETECTOR FAQ PARA FLUJO DE VENTA ---
     text_lower = text.lower()
     for key, keywords in FAQ_KEYWORD_MAP.items():
         if any(keyword in text_lower for keyword in keywords):
@@ -340,12 +337,12 @@ def handle_sales_flow(from_number, text, session):
 
             if response_text:
                 send_text_message(from_number, response_text)
+                time.sleep(1)
                 last_question = get_last_question(session.get('state'))
                 if last_question:
                     re_prompt = f"¡Espero haber aclarado tu duda! 😊 Continuando con la coordinación de tu pedido...\n\n{last_question}"
                     send_text_message(from_number, re_prompt)
                 return
-    # --- FIN DEL DETECTOR FAQ ---
     
     if any(keyword in text.lower() for keyword in KEYWORDS_GIRASOL) and session.get('state') not in ['awaiting_occasion_response', 'awaiting_purchase_decision']:
         logger.info(f"Usuario {from_number} está reiniciando el flujo.")
@@ -353,9 +350,7 @@ def handle_sales_flow(from_number, text, session):
         handle_initial_message(from_number, session.get("user_name", "Usuario"), text)
         return
 
-    # <<<--- LÍNEA CORREGIDA AQUÍ ---<<<
     current_state = session.get('state')
-    
     product_id = session.get('product_id')
     if not product_id:
         send_text_message(from_number, "Hubo un problema, no sé qué producto estás comprando. Por favor, empieza de nuevo.")
@@ -376,7 +371,7 @@ def handle_sales_flow(from_number, text, session):
         presentacion = detalles.get('empaque', 'viene en una hermosa caja de regalo')
         if url_imagen_empaque:
             send_image_message(from_number, url_imagen_empaque)
-
+            time.sleep(1)
         mensaje_persuasion_1 = (
             "¡Maravillosa elección! ✨ El *Collar Mágico Girasol Radiant* es pura energía. Aquí tienes todos los detalles:\n\n"
             f"💎 *Material:* {material} ¡Hipoalergénico y no se oscurece!\n"
@@ -398,6 +393,7 @@ def handle_sales_flow(from_number, text, session):
             url_imagen_upsell = product_data.get('imagenes', {}).get('upsell')
             if url_imagen_upsell:
                 send_image_message(from_number, url_imagen_upsell)
+                time.sleep(1)
 
             upsell_message_1 = (
                 "¡Excelente elección! Pero espera, antes de continuar... por haber decidido llevar tu collar, ¡acabas de desbloquear una oferta exclusiva! ✨\n\n"
@@ -423,7 +419,6 @@ def handle_sales_flow(from_number, text, session):
             delete_session(from_number)
             send_text_message(from_number, "Entendido. Si cambias de opinión, aquí estaré. ¡Que tengas un buen día! 😊")
 
-    # ... (El resto del código de estados no tiene cambios lógicos)
     elif current_state == 'awaiting_upsell_decision':
         if 'oferta' in text.lower():
             session['product_name'] = "Oferta 2x Collares Mágicos + Cadenas"
@@ -677,7 +672,6 @@ def handle_sales_flow(from_number, text, session):
     else:
         send_text_message(from_number, "Estoy un poco confundido. Si deseas reiniciar, escribe 'cancelar'.")
 
-
 @app.route('/api/webhook', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
@@ -733,4 +727,4 @@ def process_message(message, contacts):
 
 @app.route('/')
 def home():
-    return jsonify({'status': 'Bot Daaqui Activo - V6.7 - CORRECCIÓN CRÍTICA DE ESTADO'})
+    return jsonify({'status': 'Bot Daaqui Activo - V6.6 - PULIDO FINAL'})
