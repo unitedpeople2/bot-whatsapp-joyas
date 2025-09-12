@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 # ==========================================================
-# BOT DAAQUI JOYAS - V5 FINAL
-# Añade cálculo y guardado de saldo restante
+# BOT DAAQUI JOYAS - V6 - CON MODULO FAQ
 # ==========================================================
 from flask import Flask, request, jsonify
 import requests
@@ -74,7 +73,10 @@ FAQ_KEYWORD_MAP = {
     'precio': ['precio', 'valor', 'costo'],
     'envio': ['envío', 'envio', 'delivery', 'mandan', 'entrega', 'cuesta el envío'],
     'pago': ['pago', 'pagar', 'contraentrega', 'contra entrega', 'yape', 'plin'],
-    'tienda': ['tienda', 'local', 'ubicación', 'ubicacion', 'dirección', 'direccion']
+    'tienda': ['tienda', 'local', 'ubicación', 'ubicacion', 'dirección', 'direccion'],
+    'material': ['material', 'acero', 'alergia', 'hipoalergenico'],
+    'cuidados': ['mojar', 'agua', 'oxida', 'negro', 'cuidar', 'limpiar', 'cuidados'],
+    'garantia': ['garantía', 'garantia', 'falla', 'defectuoso', 'roto', 'cambio', 'cambiar']
 }
 
 # ==============================================================================
@@ -161,7 +163,7 @@ def save_completed_sale_and_customer(session_data):
             "cliente_id": customer_id,
             "estado_pedido": "Adelanto Pagado",
             "adelanto_recibido": adelanto,
-            "saldo_restante": saldo_restante # <<<--- CAMBIO AQUÍ
+            "saldo_restante": saldo_restante
         }
         db.collection('ventas').document(sale_id).set(sale_data)
         logger.info(f"Venta {sale_id} guardada en Firestore.")
@@ -248,7 +250,7 @@ def guardar_pedido_en_sheet(sale_data):
             sale_data.get('tipo_envio', 'N/A'),
             sale_data.get('metodo_pago', 'N/A'),
             sale_data.get('adelanto_recibido', 0),
-            sale_data.get('saldo_restante', 0), # <<<--- CAMBIO AQUÍ
+            sale_data.get('saldo_restante', 0),
             sale_data.get('provincia', 'N/A'),
             sale_data.get('distrito', 'N/A'),
             sale_data.get('detalles_cliente', 'N/A'),
@@ -351,8 +353,6 @@ def handle_sales_flow(from_number, text, session):
         return
 
     current_state = session.get('state')
-    # ... (El resto del código es idéntico al anterior)
-    
     product_id = session.get('product_id')
     if not product_id:
         send_text_message(from_number, "Hubo un problema, no sé qué producto estás comprando. Por favor, empieza de nuevo.")
