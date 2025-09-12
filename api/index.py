@@ -325,7 +325,6 @@ def handle_sales_flow(from_number, text, session):
                 if url_imagen_upsell:
                     send_image_message(from_number, url_imagen_upsell)
                     time.sleep(2)
-                # El texto de la oferta ahora está en el código para depurar
                 upsell_message_1 = "¡Excelente elección! Pero espera, antes de continuar... por haber decidido llevar tu collar, ¡acabas de desbloquear una oferta exclusiva! ✨\n\nAñade un segundo Collar Mágico a tu pedido y te incluimos de regalo dos cadenas de diseño italiano para que combines tus dijes como quieras.\n\nEn resumen, tu pedido se ampliaría a:\n✨ 2 Collares Mágicos\n🎁 2 Cadenas de Regalo de diseño\n🎀 2 Cajitas de Regalo Premium Daaqui\n💎 Todo por un único pago de S/ 99.00"
                 send_text_message(from_number, upsell_message_1)
                 time.sleep(2)
@@ -342,7 +341,6 @@ def handle_sales_flow(from_number, text, session):
             send_text_message(from_number, "Entendido. Si cambias de opinión, aquí estaré. ¡Que tengas un buen día! 😊")
 
     elif current_state == 'awaiting_upsell_decision':
-        # ===== LÓGICA DE UPSELL AISLADA EN EL CÓDIGO =====
         if 'oferta' in text.lower():
             session['product_name'] = "Oferta 2x Collares Mágicos + Cadenas"
             session['product_price'] = 99.00
@@ -445,7 +443,11 @@ def handle_sales_flow(from_number, text, session):
         if 'si' in text.lower() or 'sí' in text.lower():
             session['state'] = 'awaiting_shalom_details'
             save_session(from_number, session)
-            send_text_message(from_number, "¡Excelente! Entonces ya conoces el proceso. Para terminar, bríndame en un solo mensaje tu *Nombre Completo*, *DNI* y la *dirección exacta de la agencia Shalom*.")
+            mensaje = (
+                "¡Excelente! Entonces ya conoces el proceso. Para terminar, bríndame en un solo mensaje tu *Nombre Completo*, *DNI* y la *dirección exacta de la agencia Shalom*. ✍🏽\n\n"
+                "📝 *Ej: Ana García, 12345678, Av. Ejército 123 - Arequipa*"
+            )
+            send_text_message(from_number, mensaje)
         else:
             session['state'] = 'awaiting_shalom_agency_knowledge'
             save_session(from_number, session)
@@ -463,7 +465,11 @@ def handle_sales_flow(from_number, text, session):
         if 'si' in text.lower() or 'sí' in text.lower():
             session['state'] = 'awaiting_shalom_details'
             save_session(from_number, session)
-            send_text_message(from_number, "¡Perfecto! Entonces, por favor, bríndame en un solo mensaje tu *Nombre Completo*, *DNI* y la *dirección de esa agencia Shalom*.")
+            mensaje = (
+                "¡Perfecto! Entonces, por favor, bríndame en un solo mensaje tu *Nombre Completo*, *DNI* y la *dirección de esa agencia Shalom*. ✍🏽\n\n"
+                "📝 *Ej: Ana García, 12345678, Av. Ejército 123 - Arequipa*"
+            )
+            send_text_message(from_number, mensaje)
         else:
             delete_session(from_number)
             send_text_message(from_number, "Entiendo. 😔 Te recomiendo buscar en Google 'Shalom agencias' para encontrar la más cercana para una futura compra. ¡Muchas gracias por tu interés!")
@@ -554,9 +560,17 @@ def handle_sales_flow(from_number, text, session):
                     )
                     send_text_message(from_number, mensaje_final)
                 else: # Shalom
+                    total = sale_data.get('precio_venta', 0)
+                    adelanto = sale_data.get('adelanto_recibido', 0)
+                    restante = total - adelanto
                     mensaje_final = (
-                        "¡Adelanto confirmado! ✨ Hemos agendado tu pedido.\n\n"
-                        "En las próximas 24 horas hábiles te enviaremos por aquí tu *código de seguimiento* de Shalom. 🚚\n\n"
+                        "¡Adelanto confirmado! ✨ Hemos agendado tu envío.\n\n"
+                        "**Resumen Financiero:**\n"
+                        f"💸 *Total del pedido:* S/ {total:.2f}\n"
+                        f"✅ *Adelanto:* - S/ {adelanto:.2f}\n"
+                        "--------------------\n"
+                        f"💵 *Saldo restante:* **S/ {restante:.2f}**\n\n"
+                        "Te enviaremos tu *código de seguimiento* en las próximas 24h. Recuerda que el saldo restante se debe cancelar una vez que el paquete llegue a la agencia para poderte brindar la clave de recojo.\n\n"
                         "¡Gracias por tu compra en Daaqui Joyas! 🎉"
                     )
                     send_text_message(from_number, mensaje_final)
