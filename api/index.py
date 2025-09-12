@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # ==========================================================
 # BOT DAAQUI JOYAS - V5 FINAL
-# Módulo de FAQ implementado
+# Lógica de prioridad corregida
 # ==========================================================
 from flask import Flask, request, jsonify
 import requests
@@ -271,16 +271,7 @@ def get_last_question(state):
 # 6. LÓGICA DE LA CONVERSACIÓN - ETAPA 1 (EMBUDO DE VENTAS)
 # ==============================================================================
 def handle_initial_message(from_number, user_name, text):
-    # --- INICIO DEL DETECTOR FAQ PARA MENSAJES INICIALES ---
-    text_lower = text.lower()
-    for key, keywords in FAQ_KEYWORD_MAP.items():
-        if any(keyword in text_lower for keyword in keywords):
-            response_text = FAQ_RESPONSES.get(key)
-            if response_text:
-                send_text_message(from_number, response_text)
-                return
-    # --- FIN DEL DETECTOR FAQ ---
-
+    # PRIORIDAD 1: Buscar si el mensaje es sobre un producto específico.
     product_id, product_data = find_product_by_keywords(text)
     if product_data:
         nombre_producto = product_data.get('nombre', 'nuestro producto')
@@ -307,8 +298,19 @@ def handle_initial_message(from_number, user_name, text):
             "is_upsell": False
         }
         save_session(from_number, new_session)
-    else:
-        send_text_message(from_number, f"¡Hola {user_name}! 👋🏽✨ Bienvenida a *Daaqui Joyas*. Si deseas información sobre nuestro *Collar Mágico Girasol Radiant*, solo pregunta por él. 😊")
+        return # Termina la función aquí para no continuar con las otras lógicas
+
+    # PRIORIDAD 2: Si no es sobre un producto, buscar si es una pregunta frecuente.
+    text_lower = text.lower()
+    for key, keywords in FAQ_KEYWORD_MAP.items():
+        if any(keyword in text_lower for keyword in keywords):
+            response_text = FAQ_RESPONSES.get(key)
+            if response_text:
+                send_text_message(from_number, response_text)
+                return # Termina la función aquí
+
+    # PRIORIDAD 3: Si no es ninguna de las anteriores, dar el saludo general.
+    send_text_message(from_number, f"¡Hola {user_name}! 👋🏽✨ Bienvenida a *Daaqui Joyas*. Si deseas información sobre nuestro *Collar Mágico Girasol Radiant*, solo pregunta por él. 😊")
 
 # ==============================================================================
 # 7. LÓGICA DE LA CONVERSACIÓN - ETAPA 2 (FLUJO DE COMPRA)
@@ -332,7 +334,7 @@ def handle_sales_flow(from_number, text, session):
                 # Re-enganchar al cliente
                 last_question = get_last_question(session.get('state'))
                 if last_question:
-                    re_prompt = f"Continuando donde nos quedamos... {last_question}"
+                    re_prompt = f"Aclarado esto, continuemos... {last_question}"
                     send_text_message(from_number, re_prompt)
                 return
     # --- FIN DEL DETECTOR FAQ ---
