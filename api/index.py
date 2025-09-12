@@ -15,7 +15,7 @@ from firebase_admin import credentials, firestore
 from datetime import datetime
 import uuid
 import gspread
-import unicodedata # <--- NUEVA IMPORTACIÓN
+import unicodedata
 
 # Configuración del logger
 logging.basicConfig(level=logging.INFO)
@@ -52,7 +52,6 @@ app = Flask(__name__)
 # ==========================================================
 # 2. CONFIGURACIÓN DEL NEGOCIO Y VARIABLES GLOBALES
 # ==========================================================
-# ... (Sin cambios en esta sección)
 WHATSAPP_TOKEN = os.environ.get('WHATSAPP_ACCESS_TOKEN')
 VERIFY_TOKEN = os.environ.get('WHATSAPP_VERIFY_TOKEN', 'JoyasBot2025!')
 PHONE_NUMBER_ID = os.environ.get('WHATSAPP_PHONE_NUMBER_ID')
@@ -65,7 +64,6 @@ PALABRAS_CANCELACION = ["cancelar", "cancelo", "ya no quiero", "ya no", "mejor n
 # ==============================================================================
 # 3. FUNCIONES DE COMUNICACIÓN CON WHATSAPP
 # ==============================================================================
-# ... (Sin cambios en esta sección)
 def send_whatsapp_message(to_number, message_data):
     if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
         logger.error("Token de WhatsApp o ID de número de teléfono no configurados.")
@@ -88,7 +86,6 @@ def send_image_message(to_number, image_url):
 # ==============================================================================
 # 4. FUNCIONES DE INTERACCIÓN CON FIRESTORE
 # ==============================================================================
-# ... (Sin cambios en esta sección)
 def get_session(user_id):
     if not db: return None
     try:
@@ -167,32 +164,28 @@ def save_completed_sale_and_customer(session_data):
 # ==============================================================================
 # 5. FUNCIONES AUXILIARES DE LÓGICA DE NEGOCIO
 # ==============================================================================
-# ===== INICIO DE LA CORRECCIÓN DE ACENTOS =====
 def strip_accents(text):
-    """Normaliza texto eliminando acentos."""
     return ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
 
 def normalize_and_check_district(text):
-    clean_text = strip_accents(text.lower().strip()) # Normaliza la entrada del usuario
+    clean_text = re.sub(r'soy de|vivo en|estoy en', '', text, flags=re.IGNORECASE).strip()
+    normalized_input = strip_accents(clean_text.lower())
     
     abreviaturas = BUSINESS_RULES.get('abreviaturas_distritos', {})
-    for abbr, full_name in abreviaturas.items():
-        if abbr == clean_text:
-            clean_text = strip_accents(full_name) # Normaliza también la abreviatura expandida
-            break
-            
+    if normalized_input in abreviaturas:
+        normalized_input = strip_accents(abreviaturas[normalized_input])
+
     distritos_cobertura = BUSINESS_RULES.get('distritos_cobertura_delivery', [])
     for distrito in distritos_cobertura:
-        if re.search(r'\b' + re.escape(strip_accents(distrito)) + r'\b', clean_text): # Compara sin acentos
+        if normalized_input in strip_accents(distrito.lower()):
             return distrito.title(), 'CON_COBERTURA'
 
     distritos_totales = BUSINESS_RULES.get('distritos_lima_total', [])
     for distrito in distritos_totales:
-        if re.search(r'\b' + re.escape(strip_accents(distrito)) + r'\b', clean_text): # Compara sin acentos
+        if normalized_input in strip_accents(distrito.lower()):
             return distrito.title(), 'SIN_COBERTURA'
             
     return None, 'NO_ENCONTRADO'
-# ===== FIN DE LA CORRECCIÓN DE ACENTOS =====
 
 def parse_province_district(text):
     clean_text = re.sub(r'soy de|vivo en|mi ciudad es|el distrito es', '', text, flags=re.IGNORECASE).strip()
@@ -246,7 +239,6 @@ def guardar_pedido_en_sheet(sale_data):
 # ==============================================================================
 # 6. LÓGICA DE LA CONVERSACIÓN - ETAPA 1 (EMBUDO DE VENTAS)
 # ==============================================================================
-# ... (Sin cambios en esta sección)
 def handle_initial_message(from_number, user_name, text):
     product_id, product_data = find_product_by_keywords(text)
     if product_data:
@@ -280,7 +272,6 @@ def handle_initial_message(from_number, user_name, text):
 # ==============================================================================
 # 7. LÓGICA DE LA CONVERSACIÓN - ETAPA 2 (FLUJO DE COMPRA)
 # ==============================================================================
-# ... (Sin cambios en el resto del archivo)
 def handle_sales_flow(from_number, text, session):
     if any(keyword in text.lower() for keyword in KEYWORDS_GIRASOL) and session.get('state') not in ['awaiting_occasion_response', 'awaiting_purchase_decision']:
         logger.info(f"Usuario {from_number} está reiniciando el flujo.")
