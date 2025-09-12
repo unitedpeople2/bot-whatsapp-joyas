@@ -305,7 +305,7 @@ def handle_sales_flow(from_number, text, session):
             "¡Maravillosa elección! ✨ El *Collar Mágico Girasol Radiant* es pura energía. Aquí tienes todos los detalles:\n\n"
             f"💎 *Material:* {material} ¡Hipoalergénico y no se oscurece!\n"
             f"🔮 *La Magia:* Su piedra central es termocromática, cambia de color con tu temperatura.\n"
-            f"🎁 *Presentación:* {presentacion}, ¡lista para sorprender!"
+            f"🎁 *Presentación:* {presentacion}"
         )
         send_text_message(from_number, mensaje_persuasion_1)
         time.sleep(2)
@@ -328,7 +328,7 @@ def handle_sales_flow(from_number, text, session):
                 upsell_message_1 = "¡Excelente elección! Pero espera, antes de continuar... por haber decidido llevar tu collar, ¡acabas de desbloquear una oferta exclusiva! ✨\n\nAñade un segundo Collar Mágico a tu pedido y te incluimos de regalo dos cadenas de diseño italiano para que combines tus dijes como quieras.\n\nEn resumen, tu pedido se ampliaría a:\n✨ 2 Collares Mágicos\n🎁 2 Cadenas de Regalo de diseño\n🎀 2 Cajitas de Regalo Premium Daaqui\n💎 Todo por un único pago de S/ 99.00"
                 send_text_message(from_number, upsell_message_1)
                 time.sleep(2)
-                upsell_message_2 = "Esta oferta especial es válida solo para los pedidos confirmados hoy.\n\nPara continuar, por favor, respóndeme con una de estas dos palabras:\n👉🏽 Escribe \"oferta\" para ampliar tu pedido.\n👉🏽 Escribe \"continuar\" para llevar solo un collar."
+                upsell_message_2 = "Esta oferta especial es válida solo para los pedidos confirmados hoy.\n\nPara continuar, por favor, respóndeme con una de estas dos palabras:\n👉🏽 Escribe *oferta* para ampliar tu pedido.\n👉🏽 Escribe *continuar* para llevar solo un collar."
                 send_text_message(from_number, upsell_message_2)
                 session['state'] = 'awaiting_upsell_decision'
                 save_session(from_number, session)
@@ -376,9 +376,9 @@ def handle_sales_flow(from_number, text, session):
         save_session(from_number, session)
         adelanto = BUSINESS_RULES.get('adelanto_shalom', 20)
         mensaje = (
-            f"¡Perfecto! Para envíos a *{distrito}*, usamos la agencia *Shalom* para que tu joya llegue de forma segura. ✨\n\n"
-            f"Para separar tu producto, requerimos un adelanto de *S/ {adelanto:.2f}*. Este monto funciona como un *compromiso para el recojo del pedido* en la agencia.\n\n"
-            "¿Estás de acuerdo para continuar? (Sí/No)"
+            f"Entendido. ✅ Para *{distrito}*, los envíos son por agencia *Shalom* y requieren un adelanto de *S/ {adelanto:.2f}*. "
+            f"Este monto funciona como un *compromiso para el recojo del pedido*. 🤝\n\n"
+            "¿Estás de acuerdo? (Sí/No)"
         )
         send_text_message(from_number, mensaje)
         
@@ -406,7 +406,8 @@ def handle_sales_flow(from_number, text, session):
                 save_session(from_number, session)
                 adelanto = BUSINESS_RULES.get('adelanto_shalom', 20)
                 mensaje = (
-                    f"Entendido. Para *{distrito}*, los envíos son por agencia *Shalom* y requieren un adelanto de *S/ {adelanto:.2f}*. Este monto funciona como un *compromiso para el recojo del pedido*.\n\n"
+                    f"Entendido. ✅ Para *{distrito}*, los envíos son por agencia *Shalom* y requieren un adelanto de *S/ {adelanto:.2f}*. "
+                    f"Este monto funciona como un *compromiso para el recojo del pedido*. 🤝\n\n"
                     "¿Estás de acuerdo? (Sí/No)"
                 )
                 send_text_message(from_number, mensaje)
@@ -419,12 +420,12 @@ def handle_sales_flow(from_number, text, session):
         
         resumen = (
             "¡Gracias! Revisa que todo esté correcto para proceder:\n\n"
-            "**Resumen del Pedido:**\n"
+            "**Resumen del Pedido**\n"
             f"💎 {session.get('product_name', '')}\n"
             f"💵 Total: S/ {session.get('product_price', 0):.2f}\n"
-            f"🚚 Envío: {session.get('distrito', session.get('provincia', ''))} - **¡Totalmente Gratis!**\n"
-            f"💳 **Pago: {session.get('metodo_pago', 'No definido')}**\n\n"
-            "**Datos de Entrega:**\n"
+            f"🚚 Envío: {session.get('distrito', session.get('provincia', ''))} - ¡Totalmente Gratis!\n"
+            f"💳 Pago: {session.get('metodo_pago', 'No definido')}\n\n"
+            "**Datos de Entrega**\n"
             f"{session.get('detalles_cliente', '')}\n\n"
             "¿Confirmas que todo es correcto? (Sí/No)"
         )
@@ -434,7 +435,7 @@ def handle_sales_flow(from_number, text, session):
         if 'si' in text.lower() or 'sí' in text.lower():
             session['state'] = 'awaiting_shalom_experience'
             save_session(from_number, session)
-            send_text_message(from_number, "¡Genial! Para hacer el proceso más fácil, cuéntame, ¿alguna vez has recogido un pedido en una agencia Shalom? (Sí/No)")
+            send_text_message(from_number, "¡Genial! Para hacer el proceso más fácil, cuéntame: ¿alguna vez has recogido un pedido en una agencia Shalom? 🙋🏽‍♀️ (Sí/No)")
         else:
             delete_session(from_number)
             send_text_message(from_number, "Comprendo. Si cambias de opinión, aquí estaré. ¡Gracias! 😊")
@@ -551,7 +552,7 @@ def handle_sales_flow(from_number, text, session):
                     
                     mensaje_final = (
                         "¡Adelanto confirmado! ✨ Hemos agendado tu pedido.\n\n"
-                        f"**Resumen Financiero:**\n"
+                        "**Resumen Financiero:**\n"
                         f"*💸 Total del pedido: S/ {total:.2f}*\n"
                         f"*✅ Adelanto: - S/ {adelanto:.2f}*\n"
                         "*--------------------*\n"
