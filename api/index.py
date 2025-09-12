@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # ==========================================================
-# BOT DAAQUI JOYAS - V7.0 - EXPERTO FAQ
+# BOT DAAQUI JOYAS - V7.1 - REFINAMIENTO DE KEYWORDS FAQ
 # ==========================================================
 from flask import Flask, request, jsonify
 import requests
@@ -69,10 +69,11 @@ TITULAR_YAPE = "Hedinson Rojas Mattos"
 KEYWORDS_GIRASOL = ["girasol", "radiant", "precio", "cambia de color"]
 PALABRAS_CANCELACION = ["cancelar", "cancelo", "ya no quiero", "ya no", "mejor no", "detener", "no gracias"]
 
+# <<<--- INICIO DEL CAMBIO IMPORTANTE ---<<<
 FAQ_KEYWORD_MAP = {
     'precio': ['precio', 'valor', 'costo'],
     'envio': ['envío', 'envio', 'delivery', 'mandan', 'entrega', 'cuesta el envío'],
-    'pago': ['pago', 'pagar', 'contraentrega', 'contra entrega', 'yape', 'plin'],
+    'pago': ['pago', 'métodos de pago', 'contraentrega', 'contra entrega', 'yape', 'plin'], # Se quitó 'pagar' para ser más específico
     'tienda': ['tienda', 'local', 'ubicación', 'ubicacion', 'dirección', 'direccion'],
     'transferencia': ['transferencia', 'banco', 'bcp', 'interbank', 'cuenta', 'transferir'],
     'material': ['material', 'acero', 'alergia', 'hipoalergenico'],
@@ -81,8 +82,11 @@ FAQ_KEYWORD_MAP = {
     'cambios_devoluciones': ['cambio', 'cambiar', 'devolución', 'devoluciones', 'devuelvo'],
     'stock': ['stock', 'disponible', 'tienen', 'hay', 'unidades']
 }
+# <<<--- FIN DEL CAMBIO IMPORTANTE ---<<<
 
-# ... (El resto del código hasta handle_sales_flow se mantiene igual)
+# ==============================================================================
+# 3. FUNCIONES DE COMUNICACIÓN CON WHATSAPP
+# ==============================================================================
 def send_whatsapp_message(to_number, message_data):
     if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
         logger.error("Token de WhatsApp o ID de número de teléfono no configurados.")
@@ -102,6 +106,9 @@ def send_text_message(to_number, text):
 def send_image_message(to_number, image_url):
     send_whatsapp_message(to_number, {"type": "image", "image": {"link": image_url}})
 
+# ==============================================================================
+# 4. FUNCIONES DE INTERACCIÓN CON FIRESTORE
+# ==============================================================================
 def get_session(user_id):
     if not db: return None
     try:
@@ -182,6 +189,9 @@ def save_completed_sale_and_customer(session_data):
         logger.error(f"Error guardando venta y cliente en Firestore: {e}")
         return False, None
 
+# ==============================================================================
+# 5. FUNCIONES AUXILIARES DE LÓGICA DE NEGOCIO
+# ==============================================================================
 def strip_accents(text):
     return ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
 
@@ -273,6 +283,9 @@ def get_last_question(state):
     }
     return questions.get(state)
 
+# ==============================================================================
+# 6. LÓGICA DE LA CONVERSACIÓN - ETAPA 1 (EMBUDO DE VENTAS)
+# ==============================================================================
 def handle_initial_message(from_number, user_name, text):
     # PRIORIDAD 1: Buscar si el mensaje es sobre un producto específico.
     product_id, product_data = find_product_by_keywords(text)
@@ -315,22 +328,22 @@ def handle_initial_message(from_number, user_name, text):
     # PRIORIDAD 3: Si no es ninguna de las anteriores, dar el saludo general.
     send_text_message(from_number, f"¡Hola {user_name}! 👋🏽✨ Bienvenida a *Daaqui Joyas*. Si deseas información sobre nuestro *Collar Mágico Girasol Radiant*, solo pregunta por él. 😊")
 
+# ==============================================================================
+# 7. LÓGICA DE LA CONVERSACIÓN - ETAPA 2 (FLUJO DE COMPRA)
+# ==============================================================================
 def handle_sales_flow(from_number, text, session):
     # --- INICIO DEL DETECTOR FAQ ---
     text_lower = text.lower()
     for key, keywords in FAQ_KEYWORD_MAP.items():
         if any(keyword in text_lower for keyword in keywords):
             response_text = None
-            # Lógica de respuesta inteligente para PRECIO
             if key == 'precio' and session.get('product_name'):
                 product_name = session.get('product_name')
                 product_price = session.get('product_price')
                 response_text = f"¡Claro! El precio actual de tu pedido (*{product_name}*) es de *S/ {product_price:.2f}*, con envío gratis. 🚚"
-            # Lógica de respuesta inteligente para STOCK
             elif key == 'stock' and session.get('product_name'):
                 product_name = session.get('product_name')
                 response_text = f"¡Sí, claro! Aún tenemos unidades disponibles del *{product_name}*. ✨ ¿Te gustaría que iniciemos tu pedido?"
-            # Respuesta genérica para los demás casos
             else:
                 response_text = FAQ_RESPONSES.get(key)
 
@@ -364,8 +377,8 @@ def handle_sales_flow(from_number, text, session):
         return
     product_data = product_doc.to_dict()
 
-    # ... (El resto del código de la función se mantiene igual, se incluye completo abajo)
-
+    # ... (El resto del código de la función se mantiene igual)
+    # Se incluye todo el código completo a continuación para que solo tengas que copiar y pegar
     if current_state == 'awaiting_occasion_response':
         url_imagen_empaque = product_data.get('imagenes', {}).get('empaque')
         detalles = product_data.get('detalles', {})
@@ -718,4 +731,4 @@ def process_message(message, contacts):
 
 @app.route('/')
 def home():
-    return jsonify({'status': 'Bot Daaqui Activo - V6.8 - AJUSTE FINAL DE FORMATO Y PAUSAS'})
+    return jsonify({'status': 'Bot Daaqui Activo - V7.1 - REFINAMIENTO DE KEYWORDS FAQ'})
