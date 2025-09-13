@@ -698,7 +698,7 @@ def process_message(message, contacts):
     try:
         from_number = message.get('from')
         user_name = next((c.get('profile', {}).get('name', 'Usuario') for c in contacts if c.get('wa_id') == from_number), 'Usuario')
-        
+
         message_type = message.get('type')
         if message_type == 'text':
             text_body = message.get('text', {}).get('body', '')
@@ -709,6 +709,32 @@ def process_message(message, contacts):
             return
 
         logger.info(f"Procesando de {user_name} ({from_number}): '{text_body}'")
+
+        # <<<--- INICIO DEL COMANDO DE ADMINISTRADOR ---<<<
+        if from_number == ADMIN_WHATSAPP_NUMBER and text_body.lower().startswith('clave '):
+            logger.info("Comando de administrador detectado: 'clave'")
+            parts = text_body.split()
+            if len(parts) == 3:
+                target_number = parts[1]
+                secret_key = parts[2]
+
+                if target_number.isdigit() and len(target_number) > 8:
+                    customer_message = (
+                        "¡Gracias por confirmar tu pago! ✨\n\n"
+                        f"Aquí tienes tu clave secreta para recoger tu pedido en la agencia:\n\n"
+                        f"🔑 *CLAVE:* {secret_key}\n\n"
+                        "¡Que disfrutes tu joya!"
+                    )
+                    send_text_message(target_number, customer_message)
+
+                    admin_confirmation = f"✅ Clave '{secret_key}' enviada exitosamente al cliente {target_number}."
+                    send_text_message(ADMIN_WHATSAPP_NUMBER, admin_confirmation)
+                else:
+                    send_text_message(ADMIN_WHATSAPP_NUMBER, f"❌ Error: El número '{target_number}' no parece válido. Revisa el formato.")
+            else:
+                send_text_message(ADMIN_WHATSAPP_NUMBER, "❌ Error: Formato de comando incorrecto. Usa: clave <numero> <clave>")
+            return # Detener el procesamiento aquí
+        # <<<--- FIN DEL COMANDO DE ADMINISTRADOR ---<<<
 
         if text_body.lower() in PALABRAS_CANCELACION:
             if get_session(from_number):
