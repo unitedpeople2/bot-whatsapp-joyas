@@ -730,7 +730,7 @@ def home():
 
 # <<<--- INICIO DE LA NUEVA SECCIÓN PARA MAKE.COM ---<<<
 # ==============================================================================
-# 9. ENDPOINT PARA AUTOMATIZACIONES (MAKE.COM)
+# 9. ENDPOINT PARA AUTOMATIZACIONES (MAKE.COM) - V2 (MENSAJE DOBLE)
 # ==============================================================================
 @app.route('/api/send-tracking', methods=['POST'])
 def send_tracking_code():
@@ -743,32 +743,52 @@ def send_tracking_code():
     # 2. Obtener los datos que enviará Make.com
     data = request.get_json()
     to_number = data.get('to_number')
-    tracking_code = data.get('tracking_code')
-    
-    if not to_number or not tracking_code:
-        logger.error("Faltan 'to_number' o 'tracking_code' en la solicitud de Make.com")
+    nro_orden = data.get('nro_orden')
+    codigo_recojo = data.get('codigo_recojo')
+
+    if not to_number or not nro_orden:
+        logger.error("Faltan 'to_number' o 'nro_orden' en la solicitud de Make.com")
         return jsonify({'error': 'Faltan parámetros'}), 400
 
-    # 3. Preparar y enviar el mensaje
+    # 3. Preparar y enviar los mensajes
     try:
-        # Obtener el nombre del cliente de Firebase para personalizar el mensaje
-        customer_name = "cliente" # Valor por defecto
+        customer_name = "cliente"
         if db:
             customer_doc = db.collection('clientes').document(str(to_number)).get()
             if customer_doc.exists:
                 customer_name = customer_doc.to_dict().get('nombre_perfil_wa', 'cliente')
 
-        message_text = (
+        # --- MENSAJE 1: Los Datos ---
+        message_1 = (
             f"¡Hola {customer_name}! 👋🏽✨\n\n"
-            "¡Buenas noticias! Tu pedido de Daaqui Joyas ya está en camino.\n\n"
-            f"Puedes hacerle seguimiento con el siguiente código de Shalom:\n"
-            f"👉🏽 *{tracking_code}*\n\n"
-            "¡Gracias por tu confianza!"
+            "¡Excelentes noticias! Tu pedido de Daaqui Joyas ha sido enviado y ya está en camino. 🚚\n\n"
+            "Aquí tienes los datos para el seguimiento con la agencia Shalom:\n"
+            f"👉🏽 *Nro. de Orden:* {nro_orden}"
         )
-        send_text_message(str(to_number), message_text)
-        logger.info(f"Código de seguimiento {tracking_code} enviado a {to_number} por orden de Make.com")
-        return jsonify({'status': 'mensaje enviado'}), 200
+        if codigo_recojo:
+            message_1 += f"\n👉🏽 *Código de Recojo:* {codigo_recojo}"
+
+        message_1 += "\n\nA continuación, te explico los pasos a seguir:"
+        send_text_message(str(to_number), message_1)
+
+        # Pequeña pausa para que los mensajes lleguen en orden
+        time.sleep(2) 
+
+        # --- MENSAJE 2: Las Instrucciones ---
+        message_2 = (
+            "*Por favor, sigue estos pasos para una entrega exitosa:* 👇\n\n"
+            "*1. HAZ EL SEGUIMIENTO:* 📲\n"
+            "Te recomendamos descargar la app *\"Mi Shalom\"* en tu celular. Si eres cliente nuevo, necesitarás registrarte primero. Una vez dentro, con los datos que te enviamos, podrás ver en tiempo real dónde se encuentra tu paquete y saber exactamente cuándo llega a tu ciudad.\n\n"
+            "*2. PAGA EL SALDO CUANDO LLEGUE:* 💳\n"
+            "Cuando la app te confirme que tu pedido ha llegado a la agencia de destino, por favor, yapea o plinea el saldo restante a nuestra cuenta. Te pedimos realizar este paso *antes de ir a la agencia*. ¡Así tu recojo será súper rápido! 💨\n\n"
+            "*3. AVISA Y RECIBE TU CLAVE:* 🔑\n"
+            "Apenas nos envíes la captura de tu pago por este chat, lo validaremos y te responderemos con la *clave secreta de recojo*. ¡La necesitarás junto a tu DNI para recibir tu joya! 🎁\n\n"
+            "¡Estamos en contacto y gracias por tu confianza en Daaqui Joyas! 😊"
+        )
+        send_text_message(str(to_number), message_2)
+
+        logger.info(f"Mensajes de envío (2) enviados a {to_number} por orden de Make.com")
+        return jsonify({'status': 'mensajes enviados'}), 200
     except Exception as e:
         logger.error(f"Error crítico en send_tracking_code: {e}")
         return jsonify({'error': 'Error interno del servidor'}), 500
-# <<<--- FIN DE LA NUEVA SECCIÓN PARA MAKE.COM ---<<<
