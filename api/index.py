@@ -207,3 +207,5 @@ def send_tracking_code():
 @app.route('/')
 def home():
     return jsonify({'status': 'Bot Daaqui Activo - V10.1 - REFACTORIZADO FINAL'})
+
+# Forzar redespliegue para instalar dependencias
