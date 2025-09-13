@@ -237,3 +237,30 @@ def get_last_question(state):
         "awaiting_shalom_payment": "Una vez realizado, por favor, envíame la *captura de pantalla* para validar tu pedido."
     }
     return questions.get(state)
+
+def find_key_in_sheet(cliente_id):
+    try:
+        creds_json_str = os.environ.get('GOOGLE_CREDENTIALS_JSON')
+        sheet_name = os.environ.get('GOOGLE_SHEET_NAME')
+        if not creds_json_str or not sheet_name:
+            logger.error("[Sheets] Faltan variables de entorno para buscar clave.")
+            return None
+
+        creds_dict = json.loads(creds_json_str)
+        gc = gspread.service_account_from_dict(creds_dict)
+        spreadsheet = gc.open(sheet_name)
+        worksheet = spreadsheet.sheet1
+
+        # Asumimos que el WhatsApp ID (cliente_id) está en la columna 12 (L)
+        # y la Clave está en la columna 15 (O)
+        cell = worksheet.find(cliente_id, in_column=12) 
+        if cell:
+            clave = worksheet.cell(cell.row, 15).value
+            logger.info(f"[Sheets] Clave encontrada para {cliente_id}: {'Sí' if clave else 'No'}")
+            return clave
+        else:
+            logger.warning(f"[Sheets] No se encontró la fila para el cliente {cliente_id}.")
+            return None
+    except Exception as e:
+        logger.error(f"[Sheets] ERROR buscando la clave: {e}")
+        return None
