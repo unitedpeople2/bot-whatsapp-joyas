@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # ==========================================================
-# BOT DAAQUI JOYAS - V10.0 - REFACTORIZADO
+# BOT DAAQUI JOYAS - V10.1 - REFACTORIZADO FINAL
 # Archivo principal: maneja la configuración inicial y los webhooks.
 # ==========================================================
 from flask import Flask, request, jsonify
@@ -128,15 +128,23 @@ def process_message(message, contacts):
 
         if db and (ventas_pendientes := db.collection('ventas').where('cliente_id', '==', from_number).where('estado_pedido', '==', 'Adelanto Pagado').limit(1).get()) and message_type == 'image':
             clave_encontrada = find_key_in_sheet(from_number)
-            notificacion = (f"🔔 *¡Atención! Posible Pago Final Recibido* 🔔\n\n"
-                            f"*Cliente:* {user_name}\n*WA ID:* {from_number}\n")
+            
+            # Mensaje 1: La información
+            notificacion_info = (f"🔔 *¡Atención! Posible Pago Final Recibido* 🔔\n\n"
+                                 f"*Cliente:* {user_name}\n*WA ID:* {from_number}\n")
+            
             if clave_encontrada:
-                notificacion += (f"*Clave Encontrada:* `{clave_encontrada}`\n\n"
-                                 f"*Comando listo:*\n`clave {from_number} {clave_encontrada}`")
+                notificacion_info += f"*Clave Encontrada:* `{clave_encontrada}`"
+                # Mensaje 2: El comando listo para copiar
+                comando_listo = f"clave {from_number} {clave_encontrada}"
+                
+                send_text_message(ADMIN_WHATSAPP_NUMBER, notificacion_info)
+                time.sleep(1) 
+                send_text_message(ADMIN_WHATSAPP_NUMBER, comando_listo)
             else:
-                notificacion += ("*Clave:* No encontrada en Sheet.\n\n"
-                                 f"Busca la clave y envíala con:\n`clave {from_number} LA_CLAVE_SECRETA`")
-            send_text_message(ADMIN_WHATSAPP_NUMBER, notificacion)
+                notificacion_info += ("*Clave:* No encontrada en Sheet.\n\n"
+                                      f"Busca la clave y envíala con:\n`clave {from_number} LA_CLAVE_SECRETA`")
+                send_text_message(ADMIN_WHATSAPP_NUMBER, notificacion_info)
             return
 
         if any(palabra in text_body.lower() for palabra in PALABRAS_CANCELACION):
@@ -198,4 +206,4 @@ def send_tracking_code():
 
 @app.route('/')
 def home():
-    return jsonify({'status': 'Bot Daaqui Activo - V10.0 - REFACTORIZADO'})
+    return jsonify({'status': 'Bot Daaqui Activo - V10.1 - REFACTORIZADO FINAL'})
