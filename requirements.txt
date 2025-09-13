@@ -2,5 +2,3 @@ Flask
 requests
 firebase-admin
 gspread
-oauth2client
-gspread-dataframe
