@@ -1,5 +1,6 @@
-flask
+Flask
 requests
-gspread
-google-auth-oauthlib
 firebase-admin
+gspread
+oauth2client
+gspread-dataframe
