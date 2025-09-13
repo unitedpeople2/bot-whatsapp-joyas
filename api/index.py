@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # ==========================================================
-# BOT DAAQUI JOYAS - V10.1 - REFACTORIZADO FINAL
+# BOT DAAQUI JOYAS - V10.2 - DEBUG DETALLADO
 # Archivo principal: maneja la configuración inicial y los webhooks.
 # ==========================================================
 from flask import Flask, request, jsonify
@@ -26,6 +26,7 @@ logger = getLogger(__name__)
 db = None
 BUSINESS_RULES = {}
 FAQ_RESPONSES = {}
+
 try:
     service_account_info_str = os.environ.get('FIREBASE_SERVICE_ACCOUNT_JSON')
     if service_account_info_str:
@@ -50,6 +51,8 @@ try:
     else:
         logger.error("❌ Variable de entorno FIREBASE_SERVICE_ACCOUNT_JSON no configurada.")
 except Exception as e:
+    # ESTA ES LA LÍNEA CLAVE PARA VER EL ERROR REAL
+    logger.error(f"❌❌❌ ERROR DETALLADO EN INICIALIZACIÓN DE FIREBASE: {e} ❌❌❌")
     logger.error(f"❌ Error crítico en inicialización: {e}")
 
 app = Flask(__name__)
@@ -206,6 +209,4 @@ def send_tracking_code():
 
 @app.route('/')
 def home():
-    return jsonify({'status': 'Bot Daaqui Activo - V10.1 - REFACTORIZADO FINAL'})
-
-# Forzar redespliegue para instalar dependencias
+    return jsonify({'status': 'Bot Daaqui Activo - V10.2 - DEBUG DETALLADO'})
