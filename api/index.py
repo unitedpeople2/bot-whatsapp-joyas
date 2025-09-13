@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # ==========================================================
-# BOT DAAQUI JOYAS - V7.2 - ENDPOINT PARA MAKE.COM
+# BOT DAAQUI JOYAS - V8.0 - NOTIFICACION INTELIGENTE
 # ==========================================================
 from flask import Flask, request, jsonify
 import requests
@@ -64,13 +64,12 @@ WHATSAPP_TOKEN = os.environ.get('WHATSAPP_ACCESS_TOKEN')
 VERIFY_TOKEN = os.environ.get('WHATSAPP_VERIFY_TOKEN', 'JoyasBot2025!')
 PHONE_NUMBER_ID = os.environ.get('WHATSAPP_PHONE_NUMBER_ID')
 ADMIN_WHATSAPP_NUMBER = os.environ.get('ADMIN_WHATSAPP_NUMBER')
-# <<<--- INICIO DEL CAMBIO IMPORTANTE ---<<<
-MAKE_SECRET_TOKEN = os.environ.get('MAKE_SECRET_TOKEN') # Nuestra nueva llave secreta
-# <<<--- FIN DEL CAMBIO IMPORTANTE ---<<<
+MAKE_SECRET_TOKEN = os.environ.get('MAKE_SECRET_TOKEN')
 RUC_EMPRESA = "10700761130"
 TITULAR_YAPE = "Hedinson Rojas Mattos"
 KEYWORDS_GIRASOL = ["girasol", "radiant", "precio", "cambia de color"]
 PALABRAS_CANCELACION = ["cancelar", "cancelo", "ya no quiero", "ya no", "mejor no", "detener", "no gracias"]
+PALABRA_CLAVE_PAGO = "pago final"
 
 FAQ_KEYWORD_MAP = {
     'precio': ['precio', 'valor', 'costo'],
@@ -109,7 +108,7 @@ def send_image_message(to_number, image_url):
     send_whatsapp_message(to_number, {"type": "image", "image": {"link": image_url}})
 
 # ==============================================================================
-# 4. FUNCIONES DE INTERACCIÓN CON FIRESTORE (Sin cambios en esta sección)
+# 4. FUNCIONES DE INTERACCIÓN CON FIRESTORE
 # ==============================================================================
 def get_session(user_id):
     if not db: return None
@@ -192,7 +191,7 @@ def save_completed_sale_and_customer(session_data):
         return False, None
 
 # ==============================================================================
-# 5. FUNCIONES AUXILIARES DE LÓGICA DE NEGOCIO (Sin cambios en esta sección)
+# 5. FUNCIONES AUXILIARES DE LÓGICA DE NEGOCIO
 # ==============================================================================
 def strip_accents(text):
     return ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
@@ -200,23 +199,19 @@ def strip_accents(text):
 def normalize_and_check_district(text):
     clean_text = re.sub(r'soy de|vivo en|estoy en|es en|de', '', text, flags=re.IGNORECASE).strip()
     normalized_input = strip_accents(clean_text.lower())
-
     abreviaturas = BUSINESS_RULES.get('abreviaturas_distritos', {})
     for abbr, full_name in abreviaturas.items():
         if abbr in normalized_input:
             normalized_input = strip_accents(full_name.lower())
             break
-
     distritos_cobertura = BUSINESS_RULES.get('distritos_cobertura_delivery', [])
     for distrito in distritos_cobertura:
         if normalized_input in strip_accents(distrito.lower()):
             return distrito.title(), 'CON_COBERTURA'
-
     distritos_totales = BUSINESS_RULES.get('distritos_lima_total', [])
     for distrito in distritos_totales:
         if normalized_input in strip_accents(distrito.lower()):
             return distrito.title(), 'SIN_COBERTURA'
-            
     return None, 'NO_ENCONTRADO'
 
 def parse_province_district(text):
@@ -243,12 +238,10 @@ def guardar_pedido_en_sheet(sale_data):
         if not creds_json_str or not sheet_name:
             logger.error("[Sheets] ERROR: Faltan variables de entorno para Google Sheets.")
             return False
-        
         creds_dict = json.loads(creds_json_str)
         gc = gspread.service_account_from_dict(creds_dict)
         spreadsheet = gc.open(sheet_name)
         worksheet = spreadsheet.sheet1
-        
         nueva_fila = [
             datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
             sale_data.get('id_venta', 'N/A'),
@@ -286,7 +279,7 @@ def get_last_question(state):
     return questions.get(state)
 
 # ==============================================================================
-# 6. LÓGICA DE LA CONVERSACIÓN - ETAPA 1 (EMBUDO DE VENTAS) (Sin cambios)
+# 6. LÓGICA DE LA CONVERSACIÓN - ETAPA 1 (EMBUDO DE VENTAS)
 # ==============================================================================
 def handle_initial_message(from_number, user_name, text):
     product_id, product_data = find_product_by_keywords(text)
@@ -295,11 +288,9 @@ def handle_initial_message(from_number, user_name, text):
         descripcion_corta = product_data.get('descripcion_corta', 'es simplemente increíble.')
         precio = product_data.get('precio_base', 0)
         url_imagen_principal = product_data.get('imagenes', {}).get('principal')
-
         if url_imagen_principal:
             send_image_message(from_number, url_imagen_principal)
             time.sleep(1)
-
         mensaje_inicial = (
             f"¡Hola {user_name}! 🌞 El *{nombre_producto}* {descripcion_corta}\n\n"
             f"Por nuestra campaña del 21 de Septiembre, llévatelo a un precio especial de *S/ {precio:.2f}* "
@@ -307,7 +298,6 @@ def handle_initial_message(from_number, user_name, text):
             "Cuéntame, ¿es un tesoro para ti o un regalo para alguien especial?"
         )
         send_text_message(from_number, mensaje_inicial)
-
         new_session = {
             "state": "awaiting_occasion_response", "product_id": product_id,
             "product_name": nombre_producto, "product_price": float(precio),
@@ -328,7 +318,7 @@ def handle_initial_message(from_number, user_name, text):
     send_text_message(from_number, f"¡Hola {user_name}! 👋🏽✨ Bienvenida a *Daaqui Joyas*. Si deseas información sobre nuestro *Collar Mágico Girasol Radiant*, solo pregunta por él. 😊")
 
 # ==============================================================================
-# 7. LÓGICA DE LA CONVERSACIÓN - ETAPA 2 (FLUJO DE COMPRA) (Sin cambios)
+# 7. LÓGICA DE LA CONVERSACIÓN - ETAPA 2 (FLUJO DE COMPRA)
 # ==============================================================================
 def handle_sales_flow(from_number, text, session):
     text_lower = text.lower()
@@ -694,30 +684,31 @@ def webhook():
             logger.error(f"Error procesando webhook: {e}")
             return jsonify({'error': str(e)}), 500
 
+# ==========================================================
+# PROCESADOR DE MENSAJES (LÓGICA PRINCIPAL) - V8.0
+# ==========================================================
 def process_message(message, contacts):
     try:
         from_number = message.get('from')
         user_name = next((c.get('profile', {}).get('name', 'Usuario') for c in contacts if c.get('wa_id') == from_number), 'Usuario')
-
+        
         message_type = message.get('type')
         if message_type == 'text':
             text_body = message.get('text', {}).get('body', '')
         elif message_type == 'image':
-            text_body = "COMPROBANTE_RECIBIDO"
+            text_body = "COMPROBANTE_RECIBIDO" # Se mantiene para el flujo de venta inicial
         else:
             send_text_message(from_number, "Por ahora solo puedo procesar mensajes de texto e imágenes de comprobantes. 😊")
             return
 
         logger.info(f"Procesando de {user_name} ({from_number}): '{text_body}'")
 
-        # <<<--- INICIO DEL COMANDO DE ADMINISTRADOR ---<<<
+        # --- FILTRO 1: COMANDO DE ADMINISTRADOR (MÁXIMA PRIORIDAD) ---
         if from_number == ADMIN_WHATSAPP_NUMBER and text_body.lower().startswith('clave '):
-            logger.info("Comando de administrador detectado: 'clave'")
+            logger.info(f"Comando de administrador detectado de {from_number}: 'clave'")
             parts = text_body.split()
             if len(parts) == 3:
-                target_number = parts[1]
-                secret_key = parts[2]
-
+                target_number, secret_key = parts[1], parts[2]
                 if target_number.isdigit() and len(target_number) > 8:
                     customer_message = (
                         "¡Gracias por confirmar tu pago! ✨\n\n"
@@ -726,57 +717,70 @@ def process_message(message, contacts):
                         "¡Que disfrutes tu joya!"
                     )
                     send_text_message(target_number, customer_message)
-
                     admin_confirmation = f"✅ Clave '{secret_key}' enviada exitosamente al cliente {target_number}."
-                    send_text_message(ADMIN_WHATSAPP_NUMBER, admin_confirmation)
+                    send_text_message(from_number, admin_confirmation)
                 else:
-                    send_text_message(ADMIN_WHATSAPP_NUMBER, f"❌ Error: El número '{target_number}' no parece válido. Revisa el formato.")
+                    send_text_message(from_number, f"❌ Error: El número '{target_number}' no parece válido.")
             else:
-                send_text_message(ADMIN_WHATSAPP_NUMBER, "❌ Error: Formato de comando incorrecto. Usa: clave <numero> <clave>")
-            return # Detener el procesamiento aquí
-        # <<<--- FIN DEL COMANDO DE ADMINISTRADOR ---<<<
+                send_text_message(from_number, "❌ Error: Formato de comando incorrecto. Usa: clave <numero> <clave>")
+            return
 
+        # --- FILTRO 2: NOTIFICACIÓN INTELIGENTE DE PAGO FINAL (ALTA PRIORIDAD) ---
+        if db:
+            ventas_pendientes = db.collection('ventas').where('cliente_id', '==', from_number).where('estado_pedido', '==', 'Adelanto Pagado').limit(1).get()
+            if ventas_pendientes:
+                # Si el cliente tiene un pedido pendiente, verificamos si su mensaje es de pago.
+                if message_type == 'image' or (message_type == 'text' and PALABRA_CLAVE_PAGO in text_body.lower()):
+                    logger.info(f"Posible pago final detectado del cliente {from_number}.")
+                    mensaje_notificacion = (
+                        f"🔔 *¡Atención! Posible Pago Final Recibido* 🔔\n\n"
+                        f"Un cliente con un pedido pendiente acaba de escribir. Por favor, dale prioridad.\n\n"
+                        f"*Cliente:* {user_name}\n"
+                        f"*WA ID:* {from_number}\n"
+                        f"*Mensaje Recibido:* {'_Imagen Recibida_' if message_type == 'image' else f'\"{text_body}\"'}\n\n"
+                        f"Por favor, valida el pago y, si es correcto, envíale su clave con el comando:\n`clave {from_number} LA_CLAVE_SECRETA`"
+                    )
+                    send_text_message(ADMIN_WHATSAPP_NUMBER, mensaje_notificacion)
+                    return # Detenemos el flujo para que el admin tome el control.
+
+        # --- FILTRO 3: PALABRAS DE CANCELACIÓN ---
         if text_body.lower() in PALABRAS_CANCELACION:
             if get_session(from_number):
                 delete_session(from_number)
                 send_text_message(from_number, "Hecho. He cancelado el proceso actual. Si necesitas algo más, no dudes en escribirme. 😊")
             return
 
+        # --- LÓGICA PRINCIPAL: FLUJO DE VENTA O MENSAJE INICIAL ---
         session = get_session(from_number)
         if not session:
             handle_initial_message(from_number, user_name, text_body)
         else:
             handle_sales_flow(from_number, text_body, session)
+            
     except Exception as e:
         logger.error(f"Error en process_message: {e}")
 
 @app.route('/')
 def home():
-    return jsonify({'status': 'Bot Daaqui Activo - V7.2 - ENDPOINT PARA MAKE.COM'})
+    return jsonify({'status': 'Bot Daaqui Activo - V8.0 - NOTIFICACION INTELIGENTE'})
 
-# <<<--- INICIO DE LA NUEVA SECCIÓN PARA MAKE.COM ---<<<
 # ==============================================================================
-# 9. ENDPOINT PARA AUTOMATIZACIONES (MAKE.COM) - V2 (MENSAJE DOBLE)
+# 9. ENDPOINT PARA AUTOMATIZACIONES (MAKE.COM)
 # ==============================================================================
 @app.route('/api/send-tracking', methods=['POST'])
 def send_tracking_code():
-    # 1. Verificar la "llave secreta"
     auth_header = request.headers.get('Authorization')
     if not auth_header or auth_header != f'Bearer {MAKE_SECRET_TOKEN}':
         logger.warning("Intento de acceso no autorizado a /api/send-tracking")
         return jsonify({'error': 'No autorizado'}), 401
-
-    # 2. Obtener los datos que enviará Make.com
+    
     data = request.get_json()
-    to_number = data.get('to_number')
-    nro_orden = data.get('nro_orden')
-    codigo_recojo = data.get('codigo_recojo')
-
+    to_number, nro_orden, codigo_recojo = data.get('to_number'), data.get('nro_orden'), data.get('codigo_recojo')
+    
     if not to_number or not nro_orden:
         logger.error("Faltan 'to_number' o 'nro_orden' en la solicitud de Make.com")
         return jsonify({'error': 'Faltan parámetros'}), 400
-
-    # 3. Preparar y enviar los mensajes
+    
     try:
         customer_name = "cliente"
         if db:
@@ -793,12 +797,10 @@ def send_tracking_code():
         )
         if codigo_recojo:
             message_1 += f"\n👉🏽 *Código de Recojo:* {codigo_recojo}"
-
         message_1 += "\n\nA continuación, te explico los pasos a seguir:"
         send_text_message(str(to_number), message_1)
 
-        # Pequeña pausa para que los mensajes lleguen en orden
-        time.sleep(2) 
+        time.sleep(2)
 
         # --- MENSAJE 2: Las Instrucciones ---
         message_2 = (
@@ -808,12 +810,21 @@ def send_tracking_code():
             "*2. PAGA EL SALDO CUANDO LLEGUE:* 💳\n"
             "Cuando la app te confirme que tu pedido ha llegado a la agencia de destino, por favor, yapea o plinea el saldo restante a nuestra cuenta. Te pedimos realizar este paso *antes de ir a la agencia*. ¡Así tu recojo será súper rápido! 💨\n\n"
             "*3. AVISA Y RECIBE TU CLAVE:* 🔑\n"
-            "Apenas nos envíes la captura de tu pago por este chat, lo validaremos y te responderemos con la *clave secreta de recojo*. ¡La necesitarás junto a tu DNI para recibir tu joya! 🎁\n\n"
-            "¡Estamos en contacto y gracias por tu confianza en Daaqui Joyas! 😊"
+            "Apenas nos envíes la captura de tu pago por este chat, lo validaremos y te responderemos con la *clave secreta de recojo*. ¡La necesitarás junto a tu DNI para recibir tu joya! 🎁"
         )
         send_text_message(str(to_number), message_2)
 
-        logger.info(f"Mensajes de envío (2) enviados a {to_number} por orden de Make.com")
+        # --- MENSAJE 3: La Llamada a la Acción Prioritaria ---
+        time.sleep(2)
+        message_3 = (
+            "✨ *¡Ya casi es tuya! Tu último paso es el más importante.* ✨\n\n"
+            "Para que podamos darte atención prioritaria, por favor, responde a este chat con lo siguiente:\n\n"
+            "👉🏽 Escribe el mensaje *pago final* y adjunta la *captura de tu pago*.\n\n"
+            "¡Estaremos súper atentos para enviarte tu clave secreta al instante! La necesitarás junto a tu DNI para recibir tu joya. 🎁"
+        )
+        send_text_message(str(to_number), message_3)
+
+        logger.info(f"Mensajes de envío (3) enviados a {to_number} por orden de Make.com")
         return jsonify({'status': 'mensajes enviados'}), 200
     except Exception as e:
         logger.error(f"Error crítico en send_tracking_code: {e}")
